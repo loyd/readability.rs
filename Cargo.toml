@@ -4,3 +4,5 @@ version = "0.1.0"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 
 [dependencies]
+kuchiki = "^0.3.2"
+string_cache = "^0.2.13"
