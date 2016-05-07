@@ -98,6 +98,7 @@ macro_rules! tag {
 struct NodeInfo {
     score: isize,
     text_len: usize,
+    link_len: usize,
     commas: usize
 }
 
@@ -233,6 +234,7 @@ impl Readability {
 
     fn add_info(&mut self, elem: &ElemRef) {
         let mut text_len = 0;
+        let mut link_len = 0;
         let mut commas = 0;
 
         for child in elem.as_node().children() {
@@ -244,16 +246,24 @@ impl Readability {
             });
 
             if !is_text {
+                let is_a = child.is(tag!("a"));
                 let key = HashableNodeRef(child);
                 let info = &self.info[&key];
-                text_len += info.text_len;
                 commas += info.commas;
+
+                if is_a {
+                    link_len += info.text_len + info.link_len;
+                } else {
+                    text_len += info.text_len;
+                    link_len += info.link_len;
+                }
             }
         }
 
         let key = HashableNodeRef(elem.as_node().clone());
         let info = self.info.entry(key).or_insert_with(Default::default);
         info.text_len += text_len;
+        info.link_len += link_len;
         info.commas += commas;
     }
 
