@@ -92,14 +92,19 @@ macro_rules! tag {
     ($name:tt) => { qualname!(html, $name) };
 }
 
+struct NodeInfo {
+    text_len: usize,
+    commas: usize
+}
+
 pub struct Readability {
-    scores: HashMap<HashableNodeRef, u32>
+    info: HashMap<HashableNodeRef, NodeInfo>
 }
 
 impl Readability {
     pub fn new() -> Readability {
         Readability {
-            scores: HashMap::new()
+            info: HashMap::new()
         }
     }
 
@@ -122,9 +127,22 @@ impl Readability {
                     }
                 },
 
-                NodeEdge::End(node) => {}
+                NodeEdge::End(node) => {
+                    let elem = match node.into_element_ref() {
+                        Some(e) => e,
+                        None => continue
+                    };
+
+                    self.add_info(&elem);
+
+                    if self.is_tag_to_score(&elem.name) {
+                        self.score_elem(&elem);
+                    }
+                }
             }
         }
+
+        self.info.clear();
     }
 
     fn is_unlikely_candidate(&self, elem: &ElemRef) -> bool {
@@ -197,6 +215,72 @@ impl Readability {
             tag!("p") | tag!("pre") | tag!("table") | tag!("ul") | tag!("select") => true,
             _ => false
         })
+    }
+
+    fn is_tag_to_score(&self, tag: &QualName) -> bool {
+        match *tag {
+            tag!("section") | tag!("p") | tag!("td") | tag!("pre") |
+            tag!("h2") | tag!("h3") | tag!("h4") | tag!("h5") | tag!("h6") => true,
+            _ => false
+        }
+    }
+
+    fn add_info(&mut self, elem: &ElemRef) {
+        let mut text_len = 0;
+        let mut commas = 0;
+
+        for child in elem.as_node().children() {
+            let is_text = child.as_text().map_or(false, |data| {
+                let (char_cnt, comma_cnt) = self.count_chars(&data.borrow()[..]);
+                text_len += char_cnt;
+                commas += comma_cnt;
+                true
+            });
+
+            if !is_text {
+                let key = HashableNodeRef(child);
+                let info = &self.info[&key];
+                text_len += info.text_len;
+                commas += info.commas;
+            }
+        }
+
+        let key = HashableNodeRef(elem.as_node().clone());
+        self.info.insert(key, NodeInfo {
+            text_len: text_len,
+            commas: commas
+        });
+    }
+
+    fn count_chars(&self, text: &str) -> (usize, usize) {
+        let mut char_cnt = 0;
+        let mut comma_cnt = 0;
+
+        //#XXX: what about graphemes?
+        let mut iter = text.trim().chars().peekable();
+
+        while let Some(ch) = iter.next() {
+            if ch.is_whitespace() {
+                if !iter.peek().unwrap().is_whitespace() {
+                    char_cnt += 1;
+                }
+            } else if ch == ',' {
+                if iter.peek().map_or(true, |&c| c != ',') {
+                    char_cnt += 1;
+                    comma_cnt += 1;
+                }
+            } else {
+                char_cnt += 1;
+            }
+        }
+
+        (char_cnt, comma_cnt)
+    }
+
+    fn score_elem(&mut self, elem: &ElemRef) {
+        if let None = elem.as_node().parent().and_then(|p| p.into_element_ref()) {
+            return;
+        }
     }
 }
 
