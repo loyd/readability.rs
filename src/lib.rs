@@ -7,6 +7,7 @@ use std::ops::Deref;
 use std::hash::{Hash, Hasher};
 use std::cmp;
 use std::default::Default;
+use std::isize;
 
 use string_cache::QualName;
 use kuchiki::{Node, NodeRef, NodeDataRef, ElementData};
@@ -103,23 +104,24 @@ struct NodeInfo {
 }
 
 pub struct Readability {
-    info: HashMap<HashableNodeRef, NodeInfo>
+    info: HashMap<HashableNodeRef, NodeInfo>,
+    candidates: Vec<ElemRef>
 }
 
 impl Readability {
     pub fn new() -> Readability {
         Readability {
-            info: HashMap::new()
+            info: HashMap::new(),
+            candidates: Vec::new()
         }
     }
 
-    pub fn parse(&mut self, html: &str) -> NodeRef {
+    pub fn parse(&mut self, html: &str) -> Option<NodeRef> {
         let top_level = kuchiki::parse_html().one(html);
-        self.readify(top_level.clone());
-        top_level
+        self.readify(top_level.clone())
     }
 
-    fn readify(&mut self, top_level: NodeRef) {
+    fn readify(&mut self, top_level: NodeRef) -> Option<NodeRef> {
         for edge in top_level.traverse() {
             match edge {
                 NodeEdge::Start(node) => {
@@ -149,7 +151,9 @@ impl Readability {
             }
         }
 
+        let best = self.select_best();
         self.info.clear();
+        best.map(|b| b.as_node().clone())
     }
 
     fn is_unlikely_candidate(&self, elem: &ElemRef) -> bool {
@@ -254,8 +258,8 @@ impl Readability {
                 if is_a {
                     link_len += info.text_len + info.link_len;
                 } else {
-                    text_len += info.text_len;
                     link_len += info.link_len;
+                    text_len += info.text_len;
                 }
             }
         }
@@ -340,6 +344,8 @@ impl Readability {
                     score: tag_score + add,
                     ..Default::default()
                 });
+
+                self.candidates.push(ancestor);
             }
         }
     }
@@ -357,6 +363,26 @@ impl Readability {
             tag!("h2") | tag!("h3") | tag!("h4") | tag!("h5") | tag!("h6") | tag!("th") => -5,
             _ => 0
         }
+    }
+
+    fn select_best(&mut self) -> Option<ElemRef> {
+        let mut best = None;
+        let mut best_score = isize::MIN;
+
+        for candidate in self.candidates.drain(..) {
+            let key = HashableNodeRef(candidate.as_node().clone());
+            let info = &self.info[&key];
+            let text_len = info.text_len as isize;
+            let link_len = info.link_len as isize;
+            let score = info.score * (text_len - link_len) / text_len;
+
+            if score > best_score {
+                best = Some(candidate);
+                best_score = score;
+            }
+        }
+
+        best
     }
 }
 
