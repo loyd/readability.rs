@@ -5,6 +5,8 @@ extern crate kuchiki;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::hash::{Hash, Hasher};
+use std::cmp;
+use std::default::Default;
 
 use string_cache::QualName;
 use kuchiki::{Node, NodeRef, NodeDataRef, ElementData};
@@ -92,7 +94,9 @@ macro_rules! tag {
     ($name:tt) => { qualname!(html, $name) };
 }
 
+#[derive(Default)]
 struct NodeInfo {
+    score: isize,
     text_len: usize,
     commas: usize
 }
@@ -136,7 +140,9 @@ impl Readability {
                     self.add_info(&elem);
 
                     if self.is_tag_to_score(&elem.name) {
-                        self.score_elem(&elem);
+                        if self.score_elem(&elem) {
+                            self.propagate_score(elem.as_node());
+                        }
                     }
                 }
             }
@@ -246,10 +252,9 @@ impl Readability {
         }
 
         let key = HashableNodeRef(elem.as_node().clone());
-        self.info.insert(key, NodeInfo {
-            text_len: text_len,
-            commas: commas
-        });
+        let info = self.info.entry(key).or_insert_with(Default::default);
+        info.text_len += text_len;
+        info.commas += commas;
     }
 
     fn count_chars(&self, text: &str) -> (usize, usize) {
@@ -277,9 +282,70 @@ impl Readability {
         (char_cnt, comma_cnt)
     }
 
-    fn score_elem(&mut self, elem: &ElemRef) {
-        if let None = elem.as_node().parent().and_then(|p| p.into_element_ref()) {
-            return;
+    fn score_elem(&mut self, elem: &ElemRef) -> bool {
+        let node = elem.as_node();
+
+        if let None = node.parent().and_then(|p| p.into_element_ref()) {
+            return false;
+        }
+
+        let key = HashableNodeRef(node.clone());
+        let info = self.info.get_mut(&key).unwrap();
+
+        if info.text_len < 25 {
+            return false;
+        }
+
+        // Add a point for the paragraph itself as a base.
+        info.score += 1;
+
+        // Add points for any commas within this paragraph.
+        info.score += info.commas as isize;
+
+        // For every 100 characters in this paragraph, add another point. Up to 3 points.
+        info.score += cmp::min(info.text_len / 100, 3) as isize;
+
+        true
+    }
+
+    fn propagate_score(&mut self, node: &NodeRef) {
+        let score = self.info[&HashableNodeRef(node.clone())].score;
+
+        for (level, ancestor) in node.ancestors().elements().enumerate() {
+            let key = HashableNodeRef(ancestor.as_node().clone());
+            let div = match level {
+                0 => 1,
+                1 => 2,
+                _ => level * 3
+            };
+
+            let add = score / div as isize;
+
+            if self.info.contains_key(&key) {
+                let info = self.info.get_mut(&key).unwrap();
+                info.score += add;
+            } else {
+                let tag_score = self.tag_score(&ancestor.name);
+                self.info.insert(key, NodeInfo {
+                    score: tag_score + add,
+                    ..Default::default()
+                });
+            }
+        }
+    }
+
+    fn tag_score(&self, tag: &QualName) -> isize {
+        match *tag {
+            tag!("article") => 30,
+            tag!("section") => 15,
+            tag!("div") => 5,
+            tag!("pre") | tag!("td") | tag!("blockquote") => 3,
+            tag!("address") | tag!("form") => -3,
+            tag!("dl") | tag!("dt") | tag!("dd") => -3,
+            tag!("li") | tag!("ol") | tag!("ul") => -3,
+            tag!("body") => -5,
+            tag!("h2") | tag!("h3") | tag!("h4") | tag!("h5") | tag!("h6") | tag!("th") => -5,
+            _ => 0
         }
     }
 }
