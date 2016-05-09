@@ -1,6 +1,9 @@
 #[macro_use]
 extern crate string_cache;
+#[macro_use]
+extern crate lazy_static;
 extern crate kuchiki;
+extern crate regex;
 
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -9,6 +12,7 @@ use std::cmp;
 use std::default::Default;
 use std::isize;
 
+use regex::Regex;
 use string_cache::QualName;
 use kuchiki::{Node, NodeRef, NodeDataRef, ElementData};
 use kuchiki::traits::TendrilSink;
@@ -81,15 +85,17 @@ impl NodeRefExt for ElemRef {
     }
 }
 
-// Must be sorted.
-static UNLIKELY_CANDIDATE: [&'static str; 23] = [
-    "ad-break", "agegate", "banner", "combx", "comment", "community", "disqus", "extra", "foot",
-    "header", "menu", "modal", "pager", "pagination", "popup", "related", "remark", "rss", "share",
-    "shoutbox", "sidebar", "skyscraper", "sponsor"
-];
+lazy_static! {
+    static ref UNLIKELY_CANDIDATE: Regex = Regex::new("(?xi)
+        ad-break|agegate|auth?or|bookmark|cat|com(?:bx|ment|munity)|date|disqus|extra|foot|header|
+        ignore|links|menu|nav|pag(?:er|ination)|popup|related|remark|rss|share|shoutbox|sidebar|
+        similar|social|sponsor|teaserlist|time|tweet|twitter/
+    ").unwrap();
 
-// Must be sorted.
-static MAYBE_CANDIDATE: [&'static str; 6] = ["and", "article", "body", "column", "main", "shadow"];
+    static ref MAYBE_CANDIDATE: Regex = Regex::new("(?xi)
+        and|article|body|column|main|shadow
+    ").unwrap();
+}
 
 macro_rules! tag {
     ($name:tt) => { qualname!(html, $name) };
@@ -104,31 +110,11 @@ fn is_unlikely_candidate(elem: &ElemRef) -> bool {
     let attributes = elem.attributes.borrow();
 
     // Ok, check classes.
-    let mut unlikely = false;
-
     let classes = attributes.get(atom!("class")).unwrap_or("");
     let id = attributes.get(atom!("id")).unwrap_or("");
 
-    let class_it = classes
-        .split_whitespace()
-        .map(|c| c.to_lowercase());
-
-    let id_it = id
-        .split_whitespace()
-        .map(|c| c.to_lowercase());
-
-    for word in class_it.chain(id_it) {
-        if MAYBE_CANDIDATE.binary_search(&&word[..]).is_ok() {
-            unlikely = false;
-            break;
-        }
-
-        if !unlikely && UNLIKELY_CANDIDATE.binary_search(&&word[..]).is_ok() {
-            unlikely = true;
-        }
-    }
-
-    return unlikely;
+    (UNLIKELY_CANDIDATE.is_match(classes) || UNLIKELY_CANDIDATE.is_match(id)) &&
+        !(MAYBE_CANDIDATE.is_match(classes) || MAYBE_CANDIDATE.is_match(id))
 }
 
 fn unpack_div_if_needed(div: &ElemRef) {
