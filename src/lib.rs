@@ -86,15 +86,24 @@ impl NodeRefExt for ElemRef {
 }
 
 lazy_static! {
-    static ref UNLIKELY_CANDIDATE: Regex = Regex::new("(?xi)
+    static ref UNLIKELY_CANDIDATE: Regex = Regex::new(r"(?xi)
         ad-break|agegate|auth?or|bookmark|cat|com(?:bx|ment|munity)|date|disqus|extra|foot|header|
         ignore|links|menu|nav|pag(?:er|ination)|popup|related|remark|rss|share|shoutbox|sidebar|
         similar|social|sponsor|teaserlist|time|tweet|twitter/
     ").unwrap();
 
-    static ref MAYBE_CANDIDATE: Regex = Regex::new("(?xi)
+    static ref MAYBE_CANDIDATE: Regex = Regex::new(r"(?xi)
         and|article|body|column|main|shadow
     ").unwrap();
+
+    static ref POSITIVE: Regex = Regex::new(r"(?xi)
+        article|blog|body|content|entry|main|news|pag(?:e|ination)|post|story|text
+    ").unwrap();
+
+    static ref NEGATIVE: Regex = Regex::new(r"(?xi
+        com(?:bx|ment|-)|contact|foot(?:er|note)?|masthead|media|meta|outbrain|promo|related|
+        scroll|shoutbox|sidebar|sponsor|shopping|tags|tool|widget|^hid$|\shid\s|^hid\s|hidden
+    )").unwrap();
 }
 
 macro_rules! tag {
@@ -203,6 +212,22 @@ fn tag_score(tag: &QualName) -> isize {
     }
 }
 
+fn class_score(elem: &ElemRef) -> isize {
+    let attributes = elem.attributes.borrow();
+    let mut score = 0;
+
+    if let Some(classes) = attributes.get(atom!("class")) {
+        if POSITIVE.is_match(classes) { score += 25; }
+        if NEGATIVE.is_match(classes) { score -= 25; }
+    }
+
+    if let Some(id) = attributes.get(atom!("id")) {
+        if POSITIVE.is_match(id) { score += 25; }
+        if NEGATIVE.is_match(id) { score -= 25; }
+    }
+
+    score
+}
 
 #[derive(Default)]
 struct NodeInfo {
@@ -389,6 +414,9 @@ impl Readability {
 
             // Add points for tag name.
             score += tag_score(&candidate.name);
+
+            // Add points for an class/id weight.
+            score += class_score(&candidate);
 
             // Scale the final score based on link density. Good content should have a relatively
             // small link density (5% or less) and be mostly unaffected by this operation.
