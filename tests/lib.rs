@@ -103,7 +103,7 @@ mod samples {
                 static SOURCE: &'static str = include_sample_file!($name, "source.html");
                 static EXPECTED: &'static str = include_sample_file!($name, "expected.html");
 
-                let actual = Readability::new().parse(SOURCE).unwrap();
+                let actual = Readability::new().parse(SOURCE);
                 let expected = kuchiki::parse_html().one(EXPECTED)
                     .select("body").unwrap().next().unwrap().as_node().clone();
                 compare_trees(actual, expected);

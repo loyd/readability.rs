@@ -250,12 +250,12 @@ impl Readability {
         }
     }
 
-    pub fn parse(&mut self, html: &str) -> Option<NodeRef> {
+    pub fn parse(&mut self, html: &str) -> NodeRef {
         let top_level = kuchiki::parse_html().one(html);
         self.readify(top_level.clone())
     }
 
-    fn readify(&mut self, top_level: NodeRef) -> Option<NodeRef> {
+    fn readify(&mut self, top_level: NodeRef) -> NodeRef {
         for edge in top_level.traverse() {
             match edge {
                 /*
@@ -296,7 +296,9 @@ impl Readability {
          */
 
         let best = self.select_best();
-        best.map(|b| b.as_node().clone())
+
+        //#TODO: add something more clever.
+        best.map_or(top_level, |b| b.as_node().clone())
     }
 
     fn add_info(&mut self, node: &NodeRef) {
