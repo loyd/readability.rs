@@ -8,7 +8,6 @@ mod samples {
     use kuchiki;
     use kuchiki::{NodeRef, ElementData};
     use kuchiki::NodeData::*;
-    use kuchiki::iter::Descendants;
     use kuchiki::traits::TendrilSink;
     use readability::Readability;
 
@@ -21,7 +20,7 @@ mod samples {
             let expected = expected_it.next();
 
             match (actual, expected) {
-                (None, None) => continue,
+                (None, None) => break,
                 (None, Some(node)) => panic!("Expected {}", node.to_string()),
                 (Some(node), None) => panic!("Needless {}", node.to_string()),
                 (Some(one), Some(two)) => compare_nodes(one, two)
@@ -105,7 +104,7 @@ mod samples {
 
                 let actual = Readability::new().parse(SOURCE);
                 let expected = kuchiki::parse_html().one(EXPECTED)
-                    .select("body").unwrap().next().unwrap().as_node().clone();
+                    .select("body > *").unwrap().next().unwrap().as_node().clone();
                 compare_trees(actual, expected);
             }
         };
