@@ -89,7 +89,7 @@ lazy_static! {
     static ref UNLIKELY_CANDIDATE: Regex = Regex::new(r"(?xi)
         ad-break|agegate|auth?or|bookmark|cat|com(?:bx|ment|munity)|date|disqus|extra|foot|header|
         ignore|links|menu|nav|pag(?:er|ination)|popup|related|remark|rss|share|shoutbox|sidebar|
-        similar|social|sponsor|teaserlist|time|tweet|twitter/
+        similar|social|sponsor|teaserlist|time|tweet|twitter
     ").unwrap();
 
     static ref MAYBE_CANDIDATE: Regex = Regex::new(r"(?xi)
