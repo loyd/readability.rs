@@ -157,8 +157,7 @@ fn has_single_p(node: &NodeRef) -> bool {
         return false;
     }
 
-    let no_text = node.children().text_nodes().all(|t| t.borrow().trim().is_empty());
-    return no_text;
+    node.children().text_nodes().all(|t| t.borrow().trim().is_empty())
 }
 
 fn has_block_elem(node: &NodeRef) -> bool {
