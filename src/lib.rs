@@ -1,5 +1,5 @@
 #[macro_use]
-extern crate string_cache;
+extern crate html5ever_atoms;
 #[macro_use]
 extern crate lazy_static;
 extern crate kuchiki;
@@ -13,7 +13,7 @@ use std::default::Default;
 use std::isize;
 
 use regex::Regex;
-use string_cache::QualName;
+use html5ever_atoms::QualName;
 use kuchiki::{Node, NodeRef, NodeDataRef, ElementData};
 use kuchiki::traits::TendrilSink;
 use kuchiki::iter::{NodeEdge, NodeIterator};
@@ -110,6 +110,10 @@ macro_rules! tag {
     ($name:tt) => { qualname!(html, $name) };
 }
 
+macro_rules! attrib {
+    ($name:tt) => { local_name!($name) };
+}
+
 fn is_unlikely_candidate(elem: &ElemRef) -> bool {
     match elem.name {
         tag!("a") | tag!("body") => return false,
@@ -119,8 +123,8 @@ fn is_unlikely_candidate(elem: &ElemRef) -> bool {
     let attributes = elem.attributes.borrow();
 
     // Ok, check classes.
-    let classes = attributes.get(atom!("class")).unwrap_or("");
-    let id = attributes.get(atom!("id")).unwrap_or("");
+    let classes = attributes.get(attrib!("class")).unwrap_or("");
+    let id = attributes.get(attrib!("id")).unwrap_or("");
 
     (UNLIKELY_CANDIDATE.is_match(classes) || UNLIKELY_CANDIDATE.is_match(id)) &&
         !(MAYBE_CANDIDATE.is_match(classes) || MAYBE_CANDIDATE.is_match(id))
@@ -216,12 +220,12 @@ fn class_score(elem: &ElemRef) -> isize {
     let attributes = elem.attributes.borrow();
     let mut score = 0;
 
-    if let Some(classes) = attributes.get(atom!("class")) {
+    if let Some(classes) = attributes.get(attrib!("class")) {
         if POSITIVE.is_match(classes) { score += 25; }
         if NEGATIVE.is_match(classes) { score -= 25; }
     }
 
-    if let Some(id) = attributes.get(atom!("id")) {
+    if let Some(id) = attributes.get(attrib!("id")) {
         if POSITIVE.is_match(id) { score += 25; }
         if NEGATIVE.is_match(id) { score -= 25; }
     }

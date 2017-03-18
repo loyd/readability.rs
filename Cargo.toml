@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
 
 [dependencies]
-kuchiki = "^0.3.2"
+kuchiki = "^0.4.1"
 lazy_static = "^0.2.1"
-regex = "^0.1.69"
-string_cache = "^0.2.13"
+regex = "^0.2.1"
+html5ever-atoms = "^0.1.3"
