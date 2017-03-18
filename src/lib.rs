@@ -87,9 +87,9 @@ impl NodeRefExt for ElemRef {
 
 lazy_static! {
     static ref UNLIKELY_CANDIDATE: Regex = Regex::new(r"(?xi)
-        ad-break|agegate|auth?or|bookmark|cat|com(?:bx|ment|munity)|date|disqus|extra|foot|header|
-        ignore|links|menu|nav|pag(?:er|ination)|popup|related|remark|rss|share|shoutbox|sidebar|
-        similar|social|sponsor|teaserlist|time|tweet|twitter
+        banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|foot|header|legends|menu|
+        modal|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|
+        ad-break|agegate|pagination|pager|popup|yom-remote
     ").unwrap();
 
     static ref MAYBE_CANDIDATE: Regex = Regex::new(r"(?xi)
@@ -97,12 +97,13 @@ lazy_static! {
     ").unwrap();
 
     static ref POSITIVE: Regex = Regex::new(r"(?xi)
-        article|blog|body|content|entry|main|news|pag(?:e|ination)|post|story|text
+        article|body|content|entry|hentry|h-entry|main|page|pagination|post|text|blog|story
     ").unwrap();
 
     static ref NEGATIVE: Regex = Regex::new(r"(?xi
-        com(?:bx|ment|-)|contact|foot(?:er|note)?|masthead|media|meta|outbrain|promo|related|
-        scroll|shoutbox|sidebar|sponsor|shopping|tags|tool|widget|^hid$|\shid\s|^hid\s|hidden
+        hidden|^hid$|\shid$|\shid\s|^hid\s|banner|combx|comment|com-|contact|foot|footer|footnote|
+        masthead|media|meta|modal|outbrain|promo|related|scroll|share|shoutbox|sidebar|skyscraper|
+        sponsor|shopping|tags|tool|widget
     )").unwrap();
 }
 
