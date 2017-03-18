@@ -40,15 +40,21 @@ fn compare_nodes(actual: NodeRef, expected: NodeRef) {
                 panic!("{} != {}", stringify_elem(&actual), stringify_elem(&expected));
             }
 
-            let actual_attrs = &actual.attributes.borrow().map;
-            let expected_attrs = &expected.attributes.borrow().map;
+            let actual_attrs = actual.attributes.borrow();
+            let expected_attrs = expected.attributes.borrow();
+
+            let mut actual_attrs = actual_attrs.map.iter().collect::<Vec<_>>();
+            let mut expected_attrs = expected_attrs.map.iter().collect::<Vec<_>>();
+
+            actual_attrs.sort();
+            expected_attrs.sort();
 
             let mut expected_attrs_it = expected_attrs.iter();
 
-            for ((ak, av), (ek, ev)) in actual_attrs.iter().zip(expected_attrs_it.by_ref()) {
+            for (&(ak, av), &(ek, ev)) in actual_attrs.iter().zip(expected_attrs_it.by_ref()) {
                 if ak != ek {
-                    panic!("{} != {}:\n  Invalid attribute, expected {}",
-                           stringify_elem(&actual), stringify_elem(&expected), ek.local);
+                    panic!("{} != {}:\n  Invalid attribute, expected {} but found {}",
+                           stringify_elem(&actual), stringify_elem(&expected), ek.local, ak.local);
                 }
 
                 if av != ev {
@@ -57,7 +63,7 @@ fn compare_nodes(actual: NodeRef, expected: NodeRef) {
                 }
             }
 
-            if let Some((key, value)) = expected_attrs_it.next() {
+            if let Some(&(key, value)) = expected_attrs_it.next() {
                 panic!("Expected attribute \"{}\"={}", key.local, value);
             }
         },
