@@ -1,17 +1,15 @@
-#[macro_use]
-extern crate html5ever_atoms;
 extern crate kuchiki;
 extern crate readability;
 
-use kuchiki::{NodeRef, ElementData};
+use kuchiki::NodeRef;
 use kuchiki::NodeData::*;
 use kuchiki::traits::TendrilSink;
 use readability::Readability;
 
 
 fn compare_trees(actual: NodeRef, expected: NodeRef) {
-    let mut actual_it = actual.inclusive_descendants().skip_while(is_empty_text);
-    let mut expected_it = expected.inclusive_descendants().skip_while(is_empty_text);
+    let mut actual_it = actual.inclusive_descendants().filter(is_not_empty_text);
+    let mut expected_it = expected.inclusive_descendants().filter(is_not_empty_text);
 
     loop {
         let actual = actual_it.next();
@@ -26,8 +24,8 @@ fn compare_trees(actual: NodeRef, expected: NodeRef) {
     }
 }
 
-fn is_empty_text(node: &NodeRef) -> bool {
-    node.as_text().map_or(false, |text| text.borrow().trim().is_empty())
+fn is_not_empty_text(node: &NodeRef) -> bool {
+    !node.as_text().map_or(false, |text| text.borrow().trim().is_empty())
 }
 
 fn compare_nodes(actual: NodeRef, expected: NodeRef) {
@@ -35,36 +33,12 @@ fn compare_nodes(actual: NodeRef, expected: NodeRef) {
     let expected_data = expected.data();
 
     match (actual_data, expected_data) {
-        (&Element(ref actual), &Element(ref expected)) => {
-            if actual.name != expected.name {
+        (&Element(ref actual_data), &Element(ref expected_data)) => {
+            let actual_attributes = &actual_data.attributes.borrow().map;
+            let expected_attributes = &expected_data.attributes.borrow().map;
+
+            if actual_data.name != expected_data.name || actual_attributes != expected_attributes {
                 panic!("{} != {}", stringify_elem(&actual), stringify_elem(&expected));
-            }
-
-            let actual_attrs = actual.attributes.borrow();
-            let expected_attrs = expected.attributes.borrow();
-
-            let mut actual_attrs = actual_attrs.map.iter().collect::<Vec<_>>();
-            let mut expected_attrs = expected_attrs.map.iter().collect::<Vec<_>>();
-
-            actual_attrs.sort();
-            expected_attrs.sort();
-
-            let mut expected_attrs_it = expected_attrs.iter();
-
-            for (&(ak, av), &(ek, ev)) in actual_attrs.iter().zip(expected_attrs_it.by_ref()) {
-                if ak != ek {
-                    panic!("{} != {}:\n  Invalid attribute, expected {} but found {}",
-                           stringify_elem(&actual), stringify_elem(&expected), ek.local, ak.local);
-                }
-
-                if av != ev {
-                    panic!("{} != {}:\n  Invalid value of attribute \"{}\", expected {}",
-                           stringify_elem(&actual), stringify_elem(&expected), ek.local, ev);
-                }
-            }
-
-            if let Some(&(key, value)) = expected_attrs_it.next() {
-                panic!("Expected attribute \"{}\"={}", key.local, value);
             }
         },
 
@@ -75,9 +49,7 @@ fn compare_nodes(actual: NodeRef, expected: NodeRef) {
             let actual_words = actual.split_whitespace();
             let expected_words = expected.split_whitespace();
 
-            let eq = actual_words.zip(expected_words).all(|(a, e)| a == e);
-
-            if !eq {
+            if actual_words.ne(expected_words) {
                 panic!("TEXT: {} != {}", *actual, *expected);
             }
         },
@@ -91,17 +63,16 @@ fn compare_nodes(actual: NodeRef, expected: NodeRef) {
     };
 }
 
-fn stringify_elem(data: &ElementData) -> String {
-    let attributes = data.attributes.borrow();
-    let classes = attributes.get(local_name!("class"));
-    let id = attributes.get(local_name!("id"));
+fn stringify_elem(elem: &NodeRef) -> String {
+    let string = elem.to_string();
+    let mut pos = 0;
 
-    match (id, classes) {
-        (Some(id), Some(classes)) => format!("<{} #{}.{}>", data.name.local, id, classes),
-        (Some(id), None) => format!("<{} #{}>", data.name.local, id),
-        (None, Some(classes)) => format!("<{} .{}>", data.name.local, classes),
-        (None, None) => format!("<{}>", data.name.local)
+    for slice in string.split_terminator('>') {
+        pos += slice.len() + 1;
+        if pos >= 20 { break; }
     }
+
+    string[..pos].to_owned()
 }
 
 macro_rules! include_sample_file {
