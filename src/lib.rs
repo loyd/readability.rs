@@ -281,6 +281,12 @@ fn is_conditionally_acceptable(elem: &ElemRef, info: &NodeInfo) -> bool {
      )
 }
 
+fn clean_attributes(elem: &ElemRef) {
+    let mut attributes = elem.attributes.borrow_mut();
+
+    attributes.remove(attrib!("style"));
+}
+
 #[derive(Debug, Default, PartialEq)]
 struct NodeInfo {
     content_score: f32,
@@ -369,10 +375,10 @@ impl Readability {
             None => return
         };
 
+        let elem = node.clone().into_element_ref().unwrap();
+
         let acceptable = {
             let info = self.add_info(&node);
-            let elem = node.clone().into_element_ref().unwrap();
-
             is_stuffed(&elem, info) && is_conditionally_acceptable(&elem, info)
         };
 
@@ -383,7 +389,10 @@ impl Readability {
         //#XXX: maybe it should be before the score propagation?
         if !acceptable {
             node.remove();
+            return;
         }
+
+        clean_attributes(&elem);
     }
 
     fn add_info(&mut self, node: &NodeRef) -> &NodeInfo {
