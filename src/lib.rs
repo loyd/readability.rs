@@ -168,7 +168,7 @@ fn has_block_elem(node: &NodeRef) -> bool {
     })
 }
 
-fn count_chars(text: &str) -> (usize, usize) {
+fn count_chars(text: &str) -> (u32, u32) {
     let mut char_cnt = 0;
     let mut comma_cnt = 0;
 
@@ -236,9 +236,9 @@ fn class_score(elem: &ElemRef) -> f32 {
 #[derive(Default)]
 struct NodeInfo {
     content_score: f32,
-    text_len: usize,
-    link_len: usize,
-    commas: usize
+    text_len: u32,
+    link_len: u32,
+    commas: u32
 }
 
 pub struct Readability {
