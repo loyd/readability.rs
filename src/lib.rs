@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::hash::{Hash, Hasher};
 use std::cmp;
+use std::iter;
 use std::default::Default;
 use std::f32;
 
@@ -46,7 +47,7 @@ trait NodeRefExt {
         self.node_ref().as_element().map_or(false, |e| e.name == name)
     }
 
-    fn replace<N: NodeRefExt>(&self, node: N) {
+    fn replace<N: NodeRefExt>(&self, node: &N) {
         self.node_ref().insert_before(node.node_ref().clone());
         self.remove();
     }
@@ -66,7 +67,7 @@ trait NodeRefExt {
                 replacement.append(child);
             }
 
-            node.replace(replacement);
+            node.replace(&replacement);
         }
     }
 }
@@ -135,16 +136,30 @@ fn is_unlikely_candidate(elem: &ElemRef) -> bool {
         !(MAYBE_CANDIDATE.is_match(classes) || MAYBE_CANDIDATE.is_match(id))
 }
 
-fn unpack_div_if_needed(div: &ElemRef) {
+fn transform_div(div: &ElemRef) {
     debug_assert_eq!(div.name, tag!("div"));
 
     let node = div.as_node();
 
     if has_single_p(node) {
         let p = node.children().elements().next().unwrap();
-        node.replace(p);
+        node.replace(&p);
     } else if !has_block_elem(node) {
         node.rename(tag!("p"));
+    } else {
+        for child in node.children() {
+            if let Some(text) = child.as_text() {
+                let text = text.borrow();
+
+                if text.trim().is_empty() {
+                    continue;
+                }
+
+                let p = NodeRef::new_element(tag!("p"), iter::empty());
+                child.replace(&p);
+                p.append(child.clone());
+            }
+        }
     }
 }
 
@@ -363,7 +378,7 @@ impl Readability {
             if is_unlikely_candidate(&child) {
                 child.remove();
             } else if child.is(tag!("div")) {
-                unpack_div_if_needed(&child);
+                transform_div(&child);
             }
         }
     }
