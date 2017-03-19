@@ -105,6 +105,10 @@ lazy_static! {
         masthead|media|meta|modal|outbrain|promo|related|scroll|share|shoutbox|sidebar|skyscraper|
         sponsor|shopping|tags|tool|widget
     ").unwrap();
+
+    static ref VIDEO: Regex = Regex::new(r"(?xi)
+        //(www\.)?(dailymotion|youtube|youtube-nocookie|player\.vimeo)\.com
+    ").unwrap();
 }
 
 macro_rules! tag {
@@ -233,12 +237,47 @@ fn class_score(elem: &ElemRef) -> f32 {
     score
 }
 
-#[derive(Default)]
+fn is_conditionally_acceptable(elem: &ElemRef, info: &NodeInfo) -> bool {
+    let is_list = elem.name == tag!("ul") || elem.name == tag!("ol");
+
+    //#TODO: cache the score to prevent extra calculations.
+    let class_score = class_score(elem);
+
+    if class_score < 0. {
+        return false;
+    }
+
+    if info.commas >= 10 {
+        return true;
+    }
+
+    let link_density = info.link_len as f32 / info.text_len as f32;
+    let p_img_ratio = info.p_count as f32 / info.img_count as f32;
+
+    //#TODO: take into account ancestor tags (check "figure").
+    !(
+        (info.img_count > 1 && p_img_ratio < 0.5) ||
+        (!is_list && info.li_count > info.p_count + 100) ||
+        (info.input_count > info.p_count / 3) ||
+        (!is_list && info.text_len < 25 && (info.img_count == 0 || info.img_count > 2)) ||
+        (!is_list && class_score < 25. && link_density > 0.2) ||
+        (class_score >= 25. && link_density > 0.5) ||
+        ((info.embed_count == 1 && info.text_len < 75) || info.embed_count > 1)
+     )
+}
+
+#[derive(Debug, Default, PartialEq)]
 struct NodeInfo {
     content_score: f32,
     text_len: u32,
     link_len: u32,
-    commas: u32
+    commas: u32,
+
+    p_count: u32,
+    img_count: u32,
+    li_count: u32,
+    input_count: u32,
+    embed_count: u32,
 }
 
 pub struct Readability {
@@ -264,9 +303,7 @@ impl Readability {
         let mut bubbling = false;
 
         loop {
-            if bubbling {
-                self.on_bubbling(&current);
-            } else {
+            if !bubbling {
                 self.on_capturing(&current);
 
                 if let Some(child) = current.first_child() {
@@ -274,26 +311,28 @@ impl Readability {
                     continue;
                 }
 
-                self.on_bubbling(&current);
-            }
-
-            if let Some(next) = current.next_sibling() {
-                current = next;
-                bubbling = false;
-                continue;
-            }
-
-            if let Some(parent) = current.parent() {
-                current = parent;
                 bubbling = true;
-            } else {
-                break;
             }
+
+            let (ncurrent, nbubbling) = if let Some(next) = current.next_sibling() {
+                (next, false)
+            } else if let Some(parent) = current.parent() {
+                (parent, bubbling)
+            } else {
+                if bubbling { self.on_bubbling(&current); }
+                break;
+            };
+
+            if bubbling { self.on_bubbling(&current); }
+
+            bubbling = nbubbling;
+            current = ncurrent;
         }
 
         let best = self.select_best();
 
         //#TODO: add something more clever.
+        //#TODO: don't forget about urls.
         best.map_or(top_level, |b| b.as_node().clone())
     }
 
@@ -310,22 +349,44 @@ impl Readability {
 
     // Bubbling stage: collect info based on children and score elements.
     fn on_bubbling(&mut self, node: &NodeRef) {
-        let tag_name = match node.as_element() {
+        let tag = match node.as_element() {
             Some(&ElementData { ref name, .. }) => name,
             None => return
         };
 
-        self.add_info(&node);
+        let acceptable = {
+            let info = self.add_info(&node);
 
-        if is_tag_to_score(tag_name) {
+            match *tag {
+                tag!("form") |
+                tag!("fieldset") |
+                tag!("table") |
+                tag!("ul") | tag!("ol") |
+                tag!("div") =>
+                    is_conditionally_acceptable(&node.clone().into_element_ref().unwrap(), info),
+                _ => true
+            }
+        };
+
+        if is_tag_to_score(tag) {
             self.score_node(&node);
+        }
+
+        if !acceptable {
+            node.remove();
         }
     }
 
-    fn add_info(&mut self, node: &NodeRef) {
+    fn add_info(&mut self, node: &NodeRef) -> &NodeInfo {
         let mut text_len = 0;
         let mut link_len = 0;
         let mut commas = 0;
+
+        let mut p_count = 0;
+        let mut img_count = 0;
+        let mut li_count = 0;
+        let mut input_count = 0;
+        let mut embed_count = 0;
 
         for child in node.children() {
             if let Some(data) = child.as_text() {
@@ -335,29 +396,58 @@ impl Readability {
                 continue;
             };
 
-            if child.as_element().is_none() {
+            if let Some(elem) = child.as_element() {
+                match elem.name {
+                    tag!("p") => p_count += 1,
+                    tag!("img") => img_count += 1,
+                    tag!("li") => li_count += 1,
+                    tag!("input") => input_count += 1,
+                    tag!("embed") => {
+                        let attribs = elem.attributes.borrow();
+                        let src = attribs.get(attrib!("src")).unwrap_or("");
+
+                        if !VIDEO.is_match(src) {
+                            embed_count += 1;
+                        }
+                    },
+                    _ => {}
+                };
+            } else {
                 continue;
             }
 
             let is_a = child.is(tag!("a"));
             let key = HashableNodeRef(child);
             let info = &self.info[&key];
-            commas += info.commas;
 
             link_len += if is_a { info.text_len } else { info.link_len };
             text_len += info.text_len;
+            commas += info.commas;
+            p_count += info.p_count;
+            img_count += info.img_count;
+            li_count += info.li_count;
+            input_count += info.input_count;
+            embed_count += info.embed_count;
         }
 
         let key = HashableNodeRef(node.clone());
         let info = self.info.entry(key).or_insert_with(Default::default);
 
-        debug_assert_eq!(info.text_len, 0);
-        debug_assert_eq!(info.link_len, 0);
-        debug_assert_eq!(info.commas, 0);
+        debug_assert_eq!(info, &NodeInfo {
+            content_score: info.content_score,
+            ..Default::default()
+        });
 
         info.text_len = text_len;
         info.link_len = link_len;
         info.commas = commas;
+        info.p_count = p_count;
+        info.img_count = img_count;
+        info.li_count = li_count;
+        info.input_count = input_count;
+        info.embed_count = embed_count;
+
+        info
     }
 
     fn score_node(&mut self, node: &NodeRef) {
