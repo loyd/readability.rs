@@ -10,13 +10,13 @@ use std::ops::Deref;
 use std::hash::{Hash, Hasher};
 use std::cmp;
 use std::default::Default;
-use std::isize;
+use std::f32;
 
 use regex::Regex;
 use html5ever_atoms::QualName;
 use kuchiki::{Node, NodeRef, NodeDataRef, ElementData};
 use kuchiki::traits::TendrilSink;
-use kuchiki::iter::{NodeEdge, NodeIterator};
+use kuchiki::iter::NodeIterator;
 
 
 type ElemRef = NodeDataRef<ElementData>;
@@ -100,11 +100,11 @@ lazy_static! {
         article|body|content|entry|hentry|h-entry|main|page|pagination|post|text|blog|story
     ").unwrap();
 
-    static ref NEGATIVE: Regex = Regex::new(r"(?xi
+    static ref NEGATIVE: Regex = Regex::new(r"(?xi)
         hidden|^hid$|\shid$|\shid\s|^hid\s|banner|combx|comment|com-|contact|foot|footer|footnote|
         masthead|media|meta|modal|outbrain|promo|related|scroll|share|shoutbox|sidebar|skyscraper|
         sponsor|shopping|tags|tool|widget
-    )").unwrap();
+    ").unwrap();
 }
 
 macro_rules! tag {
@@ -201,33 +201,33 @@ fn is_tag_to_score(tag: &QualName) -> bool {
     }
 }
 
-fn tag_score(tag: &QualName) -> isize {
+fn tag_score(tag: &QualName) -> f32 {
     match *tag {
-        tag!("article") => 30,
-        tag!("section") => 15,
-        tag!("div") => 5,
-        tag!("pre") | tag!("td") | tag!("blockquote") => 3,
-        tag!("address") | tag!("form") => -3,
-        tag!("dl") | tag!("dt") | tag!("dd") => -3,
-        tag!("li") | tag!("ol") | tag!("ul") => -3,
-        tag!("body") => -5,
-        tag!("h2") | tag!("h3") | tag!("h4") | tag!("h5") | tag!("h6") | tag!("th") => -5,
-        _ => 0
+        tag!("article") => 30.,
+        tag!("section") => 15.,
+        tag!("div") => 5.,
+        tag!("pre") | tag!("td") | tag!("blockquote") => 3.,
+        tag!("address") | tag!("form") => -3.,
+        tag!("dl") | tag!("dt") | tag!("dd") => -3.,
+        tag!("li") | tag!("ol") | tag!("ul") => -3.,
+        tag!("body") => -5.,
+        tag!("h2") | tag!("h3") | tag!("h4") | tag!("h5") | tag!("h6") | tag!("th") => -5.,
+        _ => 0.
     }
 }
 
-fn class_score(elem: &ElemRef) -> isize {
+fn class_score(elem: &ElemRef) -> f32 {
     let attributes = elem.attributes.borrow();
-    let mut score = 0;
+    let mut score = 0.;
 
     if let Some(classes) = attributes.get(attrib!("class")) {
-        if POSITIVE.is_match(classes) { score += 25; }
-        if NEGATIVE.is_match(classes) { score -= 25; }
+        if POSITIVE.is_match(classes) { score += 25.; }
+        if NEGATIVE.is_match(classes) { score -= 25.; }
     }
 
     if let Some(id) = attributes.get(attrib!("id")) {
-        if POSITIVE.is_match(id) { score += 25; }
-        if NEGATIVE.is_match(id) { score -= 25; }
+        if POSITIVE.is_match(id) { score += 25.; }
+        if NEGATIVE.is_match(id) { score -= 25.; }
     }
 
     score
@@ -235,7 +235,7 @@ fn class_score(elem: &ElemRef) -> isize {
 
 #[derive(Default)]
 struct NodeInfo {
-    content_score: usize,
+    content_score: f32,
     text_len: usize,
     link_len: usize,
     commas: usize
@@ -260,49 +260,66 @@ impl Readability {
     }
 
     fn readify(&mut self, top_level: NodeRef) -> NodeRef {
-        for edge in top_level.traverse() {
-            match edge {
-                /*
-                 * Capturing stage.
-                 * Remove unlikely candidates, unpack divs etc.
-                 */
-                NodeEdge::Start(node) => {
-                    for child in node.children().elements() {
-                        if is_unlikely_candidate(&child) {
-                            child.remove();
-                        } else if child.is(tag!("div")) {
-                            unpack_div_if_needed(&child);
-                        }
-                    }
-                },
+        let mut current = top_level.clone();
+        let mut bubbling = false;
 
-                /*
-                 * Bubbling stage.
-                 * Collect info based on children and score elements.
-                 */
-                NodeEdge::End(node) => {
-                    let tag_name = match node.as_element() {
-                        Some(&ElementData { ref name, .. }) => name,
-                        None => continue
-                    };
+        loop {
+            if bubbling {
+                self.on_bubbling(&current);
+            } else {
+                self.on_capturing(&current);
 
-                    self.add_info(&node);
-
-                    if is_tag_to_score(tag_name) {
-                        self.score_node(&node);
-                    }
+                if let Some(child) = current.first_child() {
+                    current = child;
+                    continue;
                 }
+
+                self.on_bubbling(&current);
+            }
+
+            if let Some(next) = current.next_sibling() {
+                current = next;
+                bubbling = false;
+                continue;
+            }
+
+            if let Some(parent) = current.parent() {
+                current = parent;
+                bubbling = true;
+            } else {
+                break;
             }
         }
-
-        /*
-         * Selecting stage.
-         */
 
         let best = self.select_best();
 
         //#TODO: add something more clever.
         best.map_or(top_level, |b| b.as_node().clone())
+    }
+
+    // Capturing stage: remove unlikely candidates, unpack divs etc.
+    fn on_capturing(&mut self, node: &NodeRef) {
+        for child in node.children().elements() {
+            if is_unlikely_candidate(&child) {
+                child.remove();
+            } else if child.is(tag!("div")) {
+                unpack_div_if_needed(&child);
+            }
+        }
+    }
+
+    // Bubbling stage: collect info based on children and score elements.
+    fn on_bubbling(&mut self, node: &NodeRef) {
+        let tag_name = match node.as_element() {
+            Some(&ElementData { ref name, .. }) => name,
+            None => return
+        };
+
+        self.add_info(&node);
+
+        if is_tag_to_score(tag_name) {
+            self.score_node(&node);
+        }
     }
 
     fn add_info(&mut self, node: &NodeRef) {
@@ -311,26 +328,24 @@ impl Readability {
         let mut commas = 0;
 
         for child in node.children() {
-            let is_text = child.as_text().map_or(false, |data| {
+            if let Some(data) = child.as_text() {
                 let (char_cnt, comma_cnt) = count_chars(&data.borrow()[..]);
                 text_len += char_cnt;
                 commas += comma_cnt;
-                true
-            });
+                continue;
+            };
 
-            if !is_text {
-                let is_a = child.is(tag!("a"));
-                let key = HashableNodeRef(child);
-                let info = &self.info[&key];
-                commas += info.commas;
-
-                if is_a {
-                    link_len += info.text_len + info.link_len;
-                } else {
-                    link_len += info.link_len;
-                    text_len += info.text_len;
-                }
+            if child.as_element().is_none() {
+                continue;
             }
+
+            let is_a = child.is(tag!("a"));
+            let key = HashableNodeRef(child);
+            let info = &self.info[&key];
+            commas += info.commas;
+
+            link_len += if is_a { info.text_len } else { info.link_len };
+            text_len += info.text_len;
         }
 
         let key = HashableNodeRef(node.clone());
@@ -351,7 +366,7 @@ impl Readability {
         }
     }
 
-    fn calculate_content_score(&self, node: &NodeRef) -> Option<usize> {
+    fn calculate_content_score(&self, node: &NodeRef) -> Option<f32> {
         let parent_elem = node.parent().and_then(|p| p.into_element_ref());
 
         if parent_elem.is_none() {
@@ -375,27 +390,31 @@ impl Readability {
         let total_len = info.text_len + info.link_len;
         content_score += cmp::min(total_len / 100, 3);
 
-        Some(content_score)
+        Some(content_score as f32)
     }
 
-    fn propagate_score(&mut self, node: &NodeRef, content_score: usize) {
+    fn propagate_score(&mut self, node: &NodeRef, content_score: f32) {
         for (level, ancestor) in node.ancestors().elements().enumerate() {
             if is_tag_to_score(&ancestor.name) {
                 return;
             }
 
-            let key = HashableNodeRef(ancestor.as_node().clone());
-            let first_meeting = !self.info.contains_key(&key);
-
             let div = match level {
-                0 => 1,
-                1 => 2,
-                _ => level * 3
+                0 => 1.,
+                1 => 2.,
+                _ => 3. * level as f32
             };
 
             let addition = content_score / div;
 
-            let info = self.info.entry(key).or_insert_with(Default::default);
+            let key = HashableNodeRef(ancestor.as_node().clone());
+            let mut first_meeting = false;
+
+            let info = self.info.entry(key).or_insert_with(|| {
+                first_meeting = true;
+                Default::default()
+            });
+
             info.content_score += addition;
 
             if first_meeting {
@@ -406,7 +425,7 @@ impl Readability {
 
     fn select_best(&mut self) -> Option<ElemRef> {
         let mut best = None;
-        let mut best_score = isize::MIN;
+        let mut best_score = -f32::INFINITY;
 
         for candidate in self.candidates.drain(..) {
             let key = HashableNodeRef(candidate.as_node().clone());
@@ -416,7 +435,7 @@ impl Readability {
             debug_assert!(info.text_len >= info.link_len);
 
             // Add content points.
-            let mut score = info.content_score as isize;
+            let mut score = info.content_score;
 
             // Add points for tag name.
             score += tag_score(&candidate.name);
@@ -426,7 +445,7 @@ impl Readability {
 
             // Scale the final score based on link density. Good content should have a relatively
             // small link density (5% or less) and be mostly unaffected by this operation.
-            score *= ((info.text_len - info.link_len) / info.text_len) as isize;
+            score *= 1. - info.link_len as f32 / info.text_len as f32;
 
             if score > best_score {
                 best = Some(candidate);
