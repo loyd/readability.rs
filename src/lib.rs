@@ -237,8 +237,23 @@ fn class_score(elem: &ElemRef) -> f32 {
     score
 }
 
+fn is_stuffed(elem: &ElemRef, info: &NodeInfo) -> bool {
+    match elem.name {
+        tag!("blockquote") | tag!("li") | tag!("p") | tag!("pre") |
+        tag!("thead") | tag!("tbody") | tag!("th") | tag!("tr") | tag!("td") => {},
+        _ => return true
+    };
+
+    //#TODO: add <video>, <audio> and <iframe> counters to the sum.
+    info.text_len > 0 || info.img_count + info.embed_count > 0
+}
+
 fn is_conditionally_acceptable(elem: &ElemRef, info: &NodeInfo) -> bool {
-    let is_list = elem.name == tag!("ul") || elem.name == tag!("ol");
+    let is_list = match elem.name {
+        tag!("form") | tag!("fieldset") | tag!("table") | tag!("div") => false,
+        tag!("ul") | tag!("ol") => true,
+        _ => return true
+    };
 
     //#TODO: cache the score to prevent extra calculations.
     let class_score = class_score(elem);
@@ -356,22 +371,16 @@ impl Readability {
 
         let acceptable = {
             let info = self.add_info(&node);
+            let elem = node.clone().into_element_ref().unwrap();
 
-            match *tag {
-                tag!("form") |
-                tag!("fieldset") |
-                tag!("table") |
-                tag!("ul") | tag!("ol") |
-                tag!("div") =>
-                    is_conditionally_acceptable(&node.clone().into_element_ref().unwrap(), info),
-                _ => true
-            }
+            is_stuffed(&elem, info) && is_conditionally_acceptable(&elem, info)
         };
 
         if is_tag_to_score(tag) {
             self.score_node(&node);
         }
 
+        //#XXX: maybe it should be before the score propagation?
         if !acceptable {
             node.remove();
         }
