@@ -7,9 +7,11 @@ use kuchiki::traits::TendrilSink;
 use readability::Readability;
 
 
-fn compare_trees(actual: NodeRef, expected: NodeRef) {
-    let mut actual_it = actual.inclusive_descendants().filter(is_not_empty_text);
-    let mut expected_it = expected.inclusive_descendants().filter(is_not_empty_text);
+fn compare_trees(actual: &NodeRef, expected: &NodeRef) {
+    compare_nodes(actual, expected);
+
+    let mut actual_it = actual.children().filter(is_not_empty_text);
+    let mut expected_it = expected.children().filter(is_not_empty_text);
 
     loop {
         let actual = actual_it.next();
@@ -17,9 +19,9 @@ fn compare_trees(actual: NodeRef, expected: NodeRef) {
 
         match (actual, expected) {
             (None, None) => break,
-            (None, Some(node)) => panic!("Expected {}", node.to_string()),
-            (Some(node), None) => panic!("Needless {}", node.to_string()),
-            (Some(one), Some(two)) => compare_nodes(one, two)
+            (None, Some(node)) => panic!("Expected {}", stringify_node(&node)),
+            (Some(node), None) => panic!("Needless {}", stringify_node(&node)),
+            (Some(one), Some(two)) => compare_trees(&one, &two)
         }
     }
 }
@@ -28,7 +30,7 @@ fn is_not_empty_text(node: &NodeRef) -> bool {
     !node.as_text().map_or(false, |text| text.borrow().trim().is_empty())
 }
 
-fn compare_nodes(actual: NodeRef, expected: NodeRef) {
+fn compare_nodes(actual: &NodeRef, expected: &NodeRef) {
     let actual_data = actual.data();
     let expected_data = expected.data();
 
@@ -38,7 +40,7 @@ fn compare_nodes(actual: NodeRef, expected: NodeRef) {
             let expected_attributes = &expected_data.attributes.borrow().map;
 
             if actual_data.name != expected_data.name || actual_attributes != expected_attributes {
-                panic!("{} != {}", stringify_elem(&actual), stringify_elem(&expected));
+                panic!("{} != {}", stringify_node(&actual), stringify_node(&expected));
             }
         },
 
@@ -59,20 +61,29 @@ fn compare_nodes(actual: NodeRef, expected: NodeRef) {
         (&Document(_), &Document(_)) |
         (&DocumentFragment, &DocumentFragment) => unimplemented!(),
 
-        _ => panic!("{} != {}", actual.to_string(), expected.to_string())
+        _ => panic!("{} != {}", stringify_node(actual), stringify_node(expected))
     };
 }
 
-fn stringify_elem(elem: &NodeRef) -> String {
-    let string = elem.to_string();
-    let mut pos = 0;
+fn stringify_node(node: &NodeRef) -> String {
+    const LIMIT: usize = 40;
 
-    for slice in string.split_terminator('>') {
-        pos += slice.len() + 1;
-        if pos >= 20 { break; }
+    let string = node.to_string();
+
+    match *node.data() {
+        Element(_) => {
+            let mut pos = 0;
+
+            for slice in string.split_terminator('>') {
+                pos += slice.len() + 1;
+                if pos >= LIMIT { break; }
+            }
+
+            string[..pos].to_owned()
+        },
+        _ if string.len() > LIMIT => format!("{}...", &string[..LIMIT]),
+        _ => string
     }
-
-    string[..pos].to_owned()
 }
 
 macro_rules! include_sample_file {
@@ -91,7 +102,8 @@ macro_rules! test_sample {
             let actual = Readability::new().parse(SOURCE);
             let expected = kuchiki::parse_html().one(EXPECTED)
                 .select("body > *").unwrap().next().unwrap().as_node().clone();
-            compare_trees(actual, expected);
+
+            compare_trees(&actual, &expected);
         }
     };
 }
