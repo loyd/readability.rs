@@ -4,6 +4,7 @@ extern crate html5ever_atoms;
 extern crate lazy_static;
 extern crate kuchiki;
 extern crate regex;
+extern crate url;
 
 use std::cmp;
 use std::iter;
@@ -11,9 +12,10 @@ use std::f32;
 
 use regex::Regex;
 use html5ever_atoms::QualName;
-use kuchiki::{NodeRef, NodeDataRef, NodeData, ElementData};
+use kuchiki::{NodeRef, NodeDataRef, NodeData, ElementData, Attributes};
 use kuchiki::traits::TendrilSink;
 use kuchiki::iter::NodeIterator;
+use url::Url;
 
 use node_cache::NodeCache;
 
@@ -92,6 +94,8 @@ lazy_static! {
     static ref VIDEO: Regex = Regex::new(r"(?xi)
         //(www\.)?(dailymotion|youtube|youtube-nocookie|player\.vimeo)\.com
     ").unwrap();
+
+    static ref PROTOCOL: Regex = Regex::new(r"^\w+:").unwrap();
 }
 
 macro_rules! tag {
@@ -246,11 +250,30 @@ fn is_stuffed(elem: &ElemRef, info: &NodeInfo) -> bool {
     info.text_len > 0 || info.img_count + info.embed_count > 0
 }
 
-fn clean_attributes(elem: &ElemRef) {
-    let mut attributes = elem.attributes.borrow_mut();
-
+fn clean_attributes(attributes: &mut Attributes) {
     //#TODO: what about removing all except for `alt`, `href`, `src` and `title`?
     attributes.remove(attrib!("style"));
+}
+
+fn fix_relative_urls(attributes: &mut Attributes, base_url: &Url) {
+    fn fix(url: &mut String, base: &Url) {
+        // Ignore absolute and hash urls.
+        if PROTOCOL.is_match(url) || url.starts_with('#') {
+            return;
+        }
+
+        if let Ok(resolved) = base.join(&url) {
+            *url = resolved.into_string();
+        }
+    }
+
+    if let Some(attr) = attributes.get_mut(attrib!("href")) {
+        fix(attr, base_url);
+    }
+
+    if let Some(attr) = attributes.get_mut(attrib!("src")) {
+        fix(attr, base_url);
+    }
 }
 
 #[derive(Default, PartialEq, Clone)]
@@ -275,6 +298,7 @@ pub struct Readability {
     weight_classes: bool,
     clean_conditionally: bool,
     clean_attributes: bool,
+    base_url: Option<Url>
 }
 
 impl Readability {
@@ -287,6 +311,7 @@ impl Readability {
             weight_classes: true,
             clean_conditionally: true,
             clean_attributes: true,
+            base_url: None,
         }
     }
 
@@ -310,12 +335,19 @@ impl Readability {
         self
     }
 
-    pub fn parse(self, html: &str) -> NodeRef {
+    pub fn base_url<U>(&mut self, url: U) -> &mut Self
+        where U: Into<Option<Url>>
+    {
+        self.base_url = url.into();
+        self
+    }
+
+    pub fn parse(&mut self, html: &str) -> NodeRef {
         let top_level = kuchiki::parse_html().one(html);
         self.readify(top_level)
     }
 
-    fn readify(mut self, top_level: NodeRef) -> NodeRef {
+    fn readify(&mut self, top_level: NodeRef) -> NodeRef {
         let mut current = top_level.clone();
         let mut bubbling = false;
 
@@ -398,7 +430,7 @@ impl Readability {
                 parent_info.text_len += char_cnt;
                 parent_info.commas += comma_cnt;
             },
-            NodeData::Element(ElementData { ref name, .. }) => {
+            NodeData::Element(ElementData { ref name, ref attributes, .. }) => {
                 self.propagate_info(node);
 
                 if is_tag_to_score(name) {
@@ -416,8 +448,16 @@ impl Readability {
                     return;
                 }
 
+                let mut attributes = attributes.borrow_mut();
+
                 if self.clean_attributes {
-                    clean_attributes(&elem);
+                    clean_attributes(&mut *attributes);
+                }
+
+                if let Some(ref base_url) = self.base_url {
+                    if *name == tag!("a") || *name == tag!("img") {
+                        fix_relative_urls(&mut *attributes, base_url);
+                    }
                 }
             },
             _ => {}
