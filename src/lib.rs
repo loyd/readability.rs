@@ -397,16 +397,7 @@ impl Readability {
         }
 
         //#TODO: add something more clever: search good parents and siblings.
-        let best = self.select_best().map_or(top_level, |b| b.as_node().clone());
-
-        // If the top candidate is the only child, use parent instead. This will help sibling
-        // joining logic when adjacent content is actually located in parent's sibling node.
-        let parent_it = best.ancestors().take_while(|parent| {
-            let mut child_it = parent.children();
-            !parent.is(tag!("body")) && child_it.next().is_some() && child_it.next().is_none()
-        });
-
-        parent_it.last().unwrap_or(best)
+        self.select_best().map_or(top_level, |b| self.correct_candidate(b.as_node().clone()))
     }
 
     // Capturing stage: remove unlikely candidates, unpack divs etc.
@@ -656,5 +647,36 @@ impl Readability {
         }
 
         best
+    }
+
+    fn correct_candidate(&mut self, mut candidate: NodeRef) -> NodeRef {
+        // Because of the bonus system, parents of candidates might have scores themselves.
+        // if we see the score going *up* in the first few steps up the tree, that's a decent sign
+        // that there might be more content lurking in other places that we want to unify in.
+        let mut last_score = self.info.get(&candidate).content_score;
+        let score_threshold = last_score / 3.;
+
+        for parent in candidate.ancestors().take_while(|n| !n.is(tag!("body"))) {
+            let parent_score = self.info.get(&parent).content_score;
+
+            if parent_score < score_threshold {
+                break;
+            }
+
+            if parent_score > last_score {
+                candidate = parent;
+            }
+
+            last_score = parent_score;
+        }
+
+        // If the top candidate is the only child, use parent instead. This will help sibling
+        // joining logic when adjacent content is actually located in parent's sibling node.
+        let parent_it = candidate.ancestors().take_while(|parent| {
+            let mut child_it = parent.children();
+            !parent.is(tag!("body")) && child_it.next().is_some() && child_it.next().is_none()
+        });
+
+        parent_it.last().unwrap_or(candidate)
     }
 }
