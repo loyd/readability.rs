@@ -246,42 +246,10 @@ fn is_stuffed(elem: &ElemRef, info: &NodeInfo) -> bool {
     info.text_len > 0 || info.img_count + info.embed_count > 0
 }
 
-fn is_conditionally_acceptable(elem: &ElemRef, info: &NodeInfo) -> bool {
-    let is_list = match elem.name {
-        tag!("form") | tag!("fieldset") | tag!("table") | tag!("div") => false,
-        tag!("ul") | tag!("ol") => true,
-        _ => return true
-    };
-
-    //#TODO: cache the score to prevent extra calculations.
-    let class_score = class_score(elem);
-
-    if class_score < 0. {
-        return false;
-    }
-
-    if info.commas >= 10 {
-        return true;
-    }
-
-    let link_density = info.link_len as f32 / info.text_len as f32;
-    let p_img_ratio = info.p_count as f32 / info.img_count as f32;
-
-    //#TODO: take into account ancestor tags (check "figure").
-    !(
-        (info.img_count > 1 && p_img_ratio < 0.5) ||
-        (!is_list && info.li_count > info.p_count + 100) ||
-        (info.input_count * 3 > info.p_count) ||
-        (!is_list && info.text_len < 25 && (info.img_count == 0 || info.img_count > 2)) ||
-        (!is_list && class_score < 25. && link_density > 0.2) ||
-        (class_score >= 25. && link_density > 0.5) ||
-        ((info.embed_count == 1 && info.text_len < 75) || info.embed_count > 1)
-     )
-}
-
 fn clean_attributes(elem: &ElemRef) {
     let mut attributes = elem.attributes.borrow_mut();
 
+    //#TODO: what about removing all except for `alt`, `href`, `src` and `title`?
     attributes.remove(attrib!("style"));
 }
 
@@ -301,15 +269,45 @@ struct NodeInfo {
 
 pub struct Readability {
     info: NodeCache<NodeInfo>,
-    candidates: Vec<ElemRef>
+    candidates: Vec<ElemRef>,
+
+    strip_unlikelys: bool,
+    weight_classes: bool,
+    clean_conditionally: bool,
+    clean_attributes: bool,
 }
 
 impl Readability {
     pub fn new() -> Readability {
         Readability {
             info: NodeCache::new(),
-            candidates: Vec::new()
+            candidates: Vec::new(),
+
+            strip_unlikelys: true,
+            weight_classes: true,
+            clean_conditionally: true,
+            clean_attributes: true,
         }
+    }
+
+    pub fn strip_unlikelys(&mut self, enabled: bool) -> &mut Self {
+        self.strip_unlikelys = enabled;
+        self
+    }
+
+    pub fn weight_classes(&mut self, enabled: bool) -> &mut Self {
+        self.weight_classes = enabled;
+        self
+    }
+
+    pub fn clean_conditionally(&mut self, enabled: bool) -> &mut Self {
+        self.clean_conditionally = enabled;
+        self
+    }
+
+    pub fn clean_attributes(&mut self, enabled: bool) -> &mut Self {
+        self.clean_attributes = enabled;
+        self
     }
 
     pub fn parse(self, html: &str) -> NodeRef {
@@ -379,7 +377,7 @@ impl Readability {
             }
 
             if let Some(child) = child.into_element_ref() {
-                if is_unlikely_candidate(&child) {
+                if self.strip_unlikelys && is_unlikely_candidate(&child) {
                     child.remove();
                 } else if child.is(tag!("div")) {
                     transform_div(&child);
@@ -408,8 +406,9 @@ impl Readability {
                 }
 
                 let elem = node.clone().into_element_ref().unwrap();
-                let info = self.info.get(&node);
-                let acceptable = is_stuffed(&elem, info) && is_conditionally_acceptable(&elem, info);
+
+                let acceptable = is_stuffed(&elem, self.info.get(&node)) &&
+                    (!self.clean_conditionally || self.is_conditionally_acceptable(&elem));
 
                 //#XXX: maybe it should be before the score propagation?
                 if !acceptable {
@@ -417,7 +416,9 @@ impl Readability {
                     return;
                 }
 
-                clean_attributes(&elem);
+                if self.clean_attributes {
+                    clean_attributes(&elem);
+                }
             },
             _ => {}
         };
@@ -461,6 +462,41 @@ impl Readability {
         parent_info.li_count += info.li_count;
         parent_info.input_count += info.input_count;
         parent_info.embed_count += info.embed_count;
+    }
+
+    fn is_conditionally_acceptable(&mut self, elem: &ElemRef) -> bool {
+        let is_list = match elem.name {
+            tag!("form") | tag!("fieldset") | tag!("table") | tag!("div") => false,
+            tag!("ul") | tag!("ol") => true,
+            _ => return true
+        };
+
+        //#TODO: cache the score to prevent extra calculations.
+        let class_score = if self.weight_classes { class_score(elem) } else { 0. };
+
+        if class_score < 0. {
+            return false;
+        }
+
+        let info = self.info.get(elem.as_node());
+
+        if info.commas >= 10 {
+            return true;
+        }
+
+        let link_density = info.link_len as f32 / info.text_len as f32;
+        let p_img_ratio = info.p_count as f32 / info.img_count as f32;
+
+        //#TODO: take into account ancestor tags (check "figure").
+        !(
+            (info.img_count > 1 && p_img_ratio < 0.5) ||
+            (!is_list && info.li_count > info.p_count + 100) ||
+            (info.input_count * 3 > info.p_count) ||
+            (!is_list && info.text_len < 25 && (info.img_count == 0 || info.img_count > 2)) ||
+            (!is_list && class_score < 25. && link_density > 0.2) ||
+            (class_score >= 25. && link_density > 0.5) ||
+            ((info.embed_count == 1 && info.text_len < 75) || info.embed_count > 1)
+         )
     }
 
     fn score_node(&mut self, node: &NodeRef) {
@@ -536,7 +572,9 @@ impl Readability {
             score += tag_score(&candidate.name);
 
             // Add points for an class/id weight.
-            score += class_score(&candidate);
+            if self.weight_classes {
+                score += class_score(&candidate);
+            }
 
             // Scale the final score based on link density. Good content should have a relatively
             // small link density (5% or less) and be mostly unaffected by this operation.
