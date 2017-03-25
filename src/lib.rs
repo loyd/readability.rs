@@ -395,11 +395,17 @@ impl Readability {
             current = ncurrent;
         }
 
-        let best = self.select_best();
+        //#TODO: add something more clever: search good parents and siblings.
+        let best = self.select_best().map_or(top_level, |b| b.as_node().clone());
 
-        //#TODO: add something more clever.
-        //#TODO: don't forget about urls.
-        best.map_or(top_level, |b| b.as_node().clone())
+        // If the top candidate is the only child, use parent instead. This will help sibling
+        // joining logic when adjacent content is actually located in parent's sibling node.
+        let parent_it = best.ancestors().take_while(|parent| {
+            let mut child_it = parent.children();
+            !parent.is(tag!("body")) && child_it.next().is_some() && child_it.next().is_none()
+        });
+
+        parent_it.last().unwrap_or(best)
     }
 
     // Capturing stage: remove unlikely candidates, unpack divs etc.

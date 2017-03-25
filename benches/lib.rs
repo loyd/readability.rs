@@ -33,3 +33,4 @@ macro_rules! bench_sample {
 
 bench_sample!(wikipedia);
 bench_sample!(medium_1);
+bench_sample!(medium_2);
