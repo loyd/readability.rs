@@ -1,9 +1,12 @@
 extern crate kuchiki;
 extern crate readability;
+extern crate url;
 
 use kuchiki::NodeRef;
 use kuchiki::NodeData::*;
 use kuchiki::traits::TendrilSink;
+use url::Url;
+
 use readability::Readability;
 
 
@@ -99,7 +102,10 @@ macro_rules! test_sample {
             static SOURCE: &'static str = include_sample_file!($name, "source.html");
             static EXPECTED: &'static str = include_sample_file!($name, "expected.html");
 
-            let actual = Readability::new().parse(SOURCE);
+            let actual = Readability::new()
+                .base_url(Url::parse("http://fakehost/test/page.html").unwrap())
+                .parse(SOURCE);
+
             let expected = kuchiki::parse_html().one(EXPECTED)
                 .select("body > *").unwrap().next().unwrap().as_node().clone();
 
@@ -107,3 +113,5 @@ macro_rules! test_sample {
         }
     };
 }
+
+test_sample!(wikipedia);
