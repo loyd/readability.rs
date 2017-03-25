@@ -254,9 +254,9 @@ fn is_stuffed(elem: &ElemRef, info: &NodeInfo) -> bool {
         },
 
         tag!("blockquote") | tag!("li") | tag!("p") | tag!("pre") |
-            tag!("thead") | tag!("tbody") | tag!("th") | tag!("tr") | tag!("td") => {
-                //#TODO: add <video>, <audio> and <iframe> counters to the sum.
-                info.text_len > 0 || info.img_count + info.embed_count > 0
+        tag!("thead") | tag!("tbody") | tag!("th") | tag!("tr") | tag!("td") => {
+                //#TODO: add <video> and <audio> counters to the sum.
+                info.text_len > 0 || info.img_count + info.embed_count + info.iframe_count > 0
             },
 
         _ => true
@@ -301,6 +301,7 @@ struct NodeInfo {
     li_count: u32,
     input_count: u32,
     embed_count: u32,
+    iframe_count: u32,
     br_count: u32,
     hr_count: u32,
 }
@@ -506,6 +507,7 @@ impl Readability {
                 tag!("input") => parent_info.input_count += 1,
                 tag!("br") => parent_info.br_count += 1,
                 tag!("hr") => parent_info.hr_count += 1,
+                tag!("iframe") => parent_info.iframe_count += 1,
                 tag!("embed") => {
                     let attribs = elem.attributes.borrow();
                     let src = attribs.get(attrib!("src")).unwrap_or("");
@@ -526,6 +528,7 @@ impl Readability {
         parent_info.li_count += info.li_count;
         parent_info.input_count += info.input_count;
         parent_info.embed_count += info.embed_count;
+        parent_info.iframe_count += info.iframe_count;
         parent_info.br_count += info.br_count;
         parent_info.hr_count += info.hr_count;
     }
