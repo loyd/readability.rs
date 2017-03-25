@@ -5,40 +5,22 @@ extern crate lazy_static;
 extern crate kuchiki;
 extern crate regex;
 
-use std::collections::HashMap;
-use std::ops::Deref;
-use std::hash::{Hash, Hasher};
 use std::cmp;
 use std::iter;
-use std::default::Default;
 use std::f32;
 
 use regex::Regex;
 use html5ever_atoms::QualName;
-use kuchiki::{Node, NodeRef, NodeDataRef, ElementData};
+use kuchiki::{NodeRef, NodeDataRef, NodeData, ElementData};
 use kuchiki::traits::TendrilSink;
 use kuchiki::iter::NodeIterator;
 
+use node_cache::NodeCache;
+
+mod node_cache;
+
 
 type ElemRef = NodeDataRef<ElementData>;
-
-#[derive(PartialEq, Eq)]
-struct HashableNodeRef(NodeRef);
-
-impl Deref for HashableNodeRef {
-    type Target = NodeRef;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Hash for HashableNodeRef {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        let ptr: *const Node = &*(self.0).0;
-        state.write_usize(ptr as usize);
-    }
-}
 
 trait NodeRefExt {
     fn node_ref(&self) -> &NodeRef;
@@ -230,7 +212,8 @@ fn tag_score(tag: &QualName) -> f32 {
         tag!("dl") | tag!("dt") | tag!("dd") => -3.,
         tag!("li") | tag!("ol") | tag!("ul") => -3.,
         tag!("body") => -5.,
-        tag!("h2") | tag!("h3") | tag!("h4") | tag!("h5") | tag!("h6") | tag!("th") => -5.,
+        tag!("h1") | tag!("h2") | tag!("h3") | tag!("h4") | tag!("h5") | tag!("h6") => -5.,
+        tag!("th") => -5.,
         _ => 0.
     }
 }
@@ -288,7 +271,7 @@ fn is_conditionally_acceptable(elem: &ElemRef, info: &NodeInfo) -> bool {
     !(
         (info.img_count > 1 && p_img_ratio < 0.5) ||
         (!is_list && info.li_count > info.p_count + 100) ||
-        (info.input_count > info.p_count / 3) ||
+        (info.input_count * 3 > info.p_count) ||
         (!is_list && info.text_len < 25 && (info.img_count == 0 || info.img_count > 2)) ||
         (!is_list && class_score < 25. && link_density > 0.2) ||
         (class_score >= 25. && link_density > 0.5) ||
@@ -302,7 +285,7 @@ fn clean_attributes(elem: &ElemRef) {
     attributes.remove(attrib!("style"));
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Default, PartialEq, Clone)]
 struct NodeInfo {
     content_score: f32,
     text_len: u32,
@@ -317,27 +300,29 @@ struct NodeInfo {
 }
 
 pub struct Readability {
-    info: HashMap<HashableNodeRef, NodeInfo>,
+    info: NodeCache<NodeInfo>,
     candidates: Vec<ElemRef>
 }
 
 impl Readability {
     pub fn new() -> Readability {
         Readability {
-            info: HashMap::new(),
+            info: NodeCache::new(),
             candidates: Vec::new()
         }
     }
 
-    pub fn parse(&mut self, html: &str) -> NodeRef {
+    pub fn parse(self, html: &str) -> NodeRef {
         let top_level = kuchiki::parse_html().one(html);
-        self.readify(top_level.clone())
+        self.readify(top_level)
     }
 
-    fn readify(&mut self, top_level: NodeRef) -> NodeRef {
+    fn readify(mut self, top_level: NodeRef) -> NodeRef {
         let mut current = top_level.clone();
         let mut bubbling = false;
 
+        //#TODO: refactor this shitty traverse!
+        //#TODO: ignore empty text nodes.
         loop {
             if !bubbling {
                 self.on_capturing(&current);
@@ -385,102 +370,77 @@ impl Readability {
 
     // Bubbling stage: collect info based on children and score elements.
     fn on_bubbling(&mut self, node: &NodeRef) {
-        let tag = match node.as_element() {
-            Some(&ElementData { ref name, .. }) => name,
+        match *node.data() {
+            NodeData::Text(ref data) => {
+                let (char_cnt, comma_cnt) = count_chars(&data.borrow()[..]);
+
+                let parent = node.parent().unwrap();
+
+                let parent_info = self.info.get(&parent);
+                parent_info.text_len += char_cnt;
+                parent_info.commas += comma_cnt;
+            },
+            NodeData::Element(ElementData { ref name, .. }) => {
+                self.propagate_info(node);
+
+                if is_tag_to_score(name) {
+                    self.score_node(&node);
+                }
+
+                let elem = node.clone().into_element_ref().unwrap();
+                let info = self.info.get(&node);
+                let acceptable = is_stuffed(&elem, info) && is_conditionally_acceptable(&elem, info);
+
+                //#XXX: maybe it should be before the score propagation?
+                if !acceptable {
+                    node.remove();
+                    return;
+                }
+
+                clean_attributes(&elem);
+            },
+            _ => {}
+        };
+    }
+
+    fn propagate_info(&mut self, node: &NodeRef) {
+        let parent = match node.parent() {
+            Some(parent) => parent,
             None => return
         };
 
-        let elem = node.clone().into_element_ref().unwrap();
+        let is_a = node.is(tag!("a"));
+        //#TODO: avoid extra cloning.
+        let info = self.info.get(node).clone();
 
-        let acceptable = {
-            let info = self.add_info(&node);
-            is_stuffed(&elem, info) && is_conditionally_acceptable(&elem, info)
-        };
+        let parent_info = self.info.get(&parent);
 
-        if is_tag_to_score(tag) {
-            self.score_node(&node);
-        }
+        if let Some(elem) = node.as_element() {
+            match elem.name {
+                tag!("p") => parent_info.p_count += 1,
+                tag!("img") => parent_info.img_count += 1,
+                tag!("li") => parent_info.li_count += 1,
+                tag!("input") => parent_info.input_count += 1,
+                tag!("embed") => {
+                    let attribs = elem.attributes.borrow();
+                    let src = attribs.get(attrib!("src")).unwrap_or("");
 
-        //#XXX: maybe it should be before the score propagation?
-        if !acceptable {
-            node.remove();
-            return;
-        }
-
-        clean_attributes(&elem);
-    }
-
-    fn add_info(&mut self, node: &NodeRef) -> &NodeInfo {
-        let mut text_len = 0;
-        let mut link_len = 0;
-        let mut commas = 0;
-
-        let mut p_count = 0;
-        let mut img_count = 0;
-        let mut li_count = 0;
-        let mut input_count = 0;
-        let mut embed_count = 0;
-
-        for child in node.children() {
-            if let Some(data) = child.as_text() {
-                let (char_cnt, comma_cnt) = count_chars(&data.borrow()[..]);
-                text_len += char_cnt;
-                commas += comma_cnt;
-                continue;
+                    if !VIDEO.is_match(src) {
+                        parent_info.embed_count += 1;
+                    }
+                },
+                _ => {}
             };
-
-            if let Some(elem) = child.as_element() {
-                match elem.name {
-                    tag!("p") => p_count += 1,
-                    tag!("img") => img_count += 1,
-                    tag!("li") => li_count += 1,
-                    tag!("input") => input_count += 1,
-                    tag!("embed") => {
-                        let attribs = elem.attributes.borrow();
-                        let src = attribs.get(attrib!("src")).unwrap_or("");
-
-                        if !VIDEO.is_match(src) {
-                            embed_count += 1;
-                        }
-                    },
-                    _ => {}
-                };
-            } else {
-                continue;
-            }
-
-            let is_a = child.is(tag!("a"));
-            let key = HashableNodeRef(child);
-            let info = &self.info[&key];
-
-            link_len += if is_a { info.text_len } else { info.link_len };
-            text_len += info.text_len;
-            commas += info.commas;
-            p_count += info.p_count;
-            img_count += info.img_count;
-            li_count += info.li_count;
-            input_count += info.input_count;
-            embed_count += info.embed_count;
         }
 
-        let key = HashableNodeRef(node.clone());
-        let info = self.info.entry(key).or_insert_with(Default::default);
-
-        debug_assert_eq!(info, &NodeInfo {
-            content_score: info.content_score,
-            ..Default::default()
-        });
-
-        info.text_len = text_len;
-        info.link_len = link_len;
-        info.commas = commas;
-        info.p_count = p_count;
-        info.img_count = img_count;
-        info.li_count = li_count;
-        info.input_count = input_count;
-        info.embed_count = embed_count;
-
-        info
+        parent_info.link_len += if is_a { info.text_len } else { info.link_len };
+        parent_info.text_len += info.text_len;
+        parent_info.commas += info.commas;
+        parent_info.p_count += info.p_count;
+        parent_info.img_count += info.img_count;
+        parent_info.li_count += info.li_count;
+        parent_info.input_count += info.input_count;
+        parent_info.embed_count += info.embed_count;
     }
 
     fn score_node(&mut self, node: &NodeRef) {
@@ -489,15 +449,14 @@ impl Readability {
         }
     }
 
-    fn calculate_content_score(&self, node: &NodeRef) -> Option<f32> {
+    fn calculate_content_score(&mut self, node: &NodeRef) -> Option<f32> {
         let parent_elem = node.parent().and_then(|p| p.into_element_ref());
 
         if parent_elem.is_none() {
             return None;
         }
 
-        let key = HashableNodeRef(node.clone());
-        let info = &self.info[&key];
+        let info = self.info.get(&node);
 
         if info.text_len < 25 {
             return None;
@@ -530,17 +489,11 @@ impl Readability {
 
             let addition = content_score / div;
 
-            let key = HashableNodeRef(ancestor.as_node().clone());
-            let mut first_meeting = false;
-
-            let info = self.info.entry(key).or_insert_with(|| {
-                first_meeting = true;
-                Default::default()
-            });
+            let (info, stored) = self.info.get_has(ancestor.as_node());
 
             info.content_score += addition;
 
-            if first_meeting {
+            if stored {
                 self.candidates.push(ancestor);
             }
         }
@@ -551,8 +504,7 @@ impl Readability {
         let mut best_score = -f32::INFINITY;
 
         for candidate in self.candidates.drain(..) {
-            let key = HashableNodeRef(candidate.as_node().clone());
-            let info = &self.info[&key];
+            let info = self.info.get(candidate.as_node());
 
             debug_assert!(info.text_len > 0);
             debug_assert!(info.text_len >= info.link_len);
@@ -576,7 +528,6 @@ impl Readability {
             }
         }
 
-        self.info.clear();
         best
     }
 }
