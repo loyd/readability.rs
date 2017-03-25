@@ -551,7 +551,3 @@ impl Readability {
         best
     }
 }
-
-pub fn new() -> Readability {
-    Readability::new()
-}
