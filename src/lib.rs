@@ -208,7 +208,6 @@ fn is_tag_to_score(tag: &QualName) -> bool {
 
 fn tag_score(tag: &QualName) -> f32 {
     match *tag {
-        tag!("article") => 30.,
         tag!("section") => 15.,
         tag!("div") => 5.,
         tag!("pre") | tag!("td") | tag!("blockquote") => 3.,
@@ -241,13 +240,27 @@ fn class_score(elem: &ElemRef) -> f32 {
 
 fn is_stuffed(elem: &ElemRef, info: &NodeInfo) -> bool {
     match elem.name {
-        tag!("blockquote") | tag!("li") | tag!("p") | tag!("pre") |
-        tag!("thead") | tag!("tbody") | tag!("th") | tag!("tr") | tag!("td") => {},
-        _ => return true
-    };
+        tag!("div") | tag!("section") | tag!("header") |
+        tag!("h1") | tag!("h2") | tag!("h3") | tag!("h4") | tag!("h5") | tag!("h6") => {
+            if info.text_len == 0 {
+                let children_count = elem.as_node().children().count() as u32;
 
-    //#TODO: add <video>, <audio> and <iframe> counters to the sum.
-    info.text_len > 0 || info.img_count + info.embed_count > 0
+                if children_count == 0 || children_count == info.br_count + info.hr_count {
+                    return false;
+                }
+            }
+
+            true
+        },
+
+        tag!("blockquote") | tag!("li") | tag!("p") | tag!("pre") |
+            tag!("thead") | tag!("tbody") | tag!("th") | tag!("tr") | tag!("td") => {
+                //#TODO: add <video>, <audio> and <iframe> counters to the sum.
+                info.text_len > 0 || info.img_count + info.embed_count > 0
+            },
+
+        _ => true
+    }
 }
 
 fn clean_attributes(attributes: &mut Attributes) {
@@ -288,6 +301,8 @@ struct NodeInfo {
     li_count: u32,
     input_count: u32,
     embed_count: u32,
+    br_count: u32,
+    hr_count: u32,
 }
 
 pub struct Readability {
@@ -393,6 +408,7 @@ impl Readability {
             let remove = match *child.data() {
                 NodeData::Comment(_) |
                 NodeData::DocumentFragment => true,
+                NodeData::Text(ref data) => data.borrow().trim().is_empty(),
                 NodeData::Element(ref elem) => {
                     match elem.name {
                         tag!("script") |
@@ -482,6 +498,8 @@ impl Readability {
                 tag!("img") => parent_info.img_count += 1,
                 tag!("li") => parent_info.li_count += 1,
                 tag!("input") => parent_info.input_count += 1,
+                tag!("br") => parent_info.br_count += 1,
+                tag!("hr") => parent_info.hr_count += 1,
                 tag!("embed") => {
                     let attribs = elem.attributes.borrow();
                     let src = attribs.get(attrib!("src")).unwrap_or("");
@@ -502,6 +520,8 @@ impl Readability {
         parent_info.li_count += info.li_count;
         parent_info.input_count += info.input_count;
         parent_info.embed_count += info.embed_count;
+        parent_info.br_count += info.br_count;
+        parent_info.hr_count += info.hr_count;
     }
 
     fn is_conditionally_acceptable(&mut self, elem: &ElemRef) -> bool {
