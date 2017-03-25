@@ -1,0 +1,34 @@
+#![feature(test)]
+
+extern crate readability;
+extern crate url;
+
+extern crate test;
+
+use test::Bencher;
+use url::Url;
+
+use readability::Readability;
+
+
+macro_rules! include_sample_file {
+    ($name:ident, $file:expr) => {
+        include_str!(concat!("../samples/", stringify!($name), "/", $file));
+    }
+}
+
+macro_rules! bench_sample {
+    ($name:ident) => {
+        #[bench]
+        fn $name(b: &mut Bencher) {
+            static SOURCE: &'static str = include_sample_file!($name, "source.html");
+
+            b.iter(||
+                Readability::new()
+                    .base_url(Url::parse("http://fakehost/test/page.html").unwrap())
+                    .parse(SOURCE));
+        }
+    };
+}
+
+bench_sample!(wikipedia);
