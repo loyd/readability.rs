@@ -322,7 +322,7 @@ impl Readability {
         let mut bubbling = false;
 
         //#TODO: refactor this shitty traverse!
-        //#TODO: ignore empty text nodes.
+        //#TODO: ignore or remove empty text nodes.
         loop {
             if !bubbling {
                 self.on_capturing(&current);
@@ -359,11 +359,31 @@ impl Readability {
 
     // Capturing stage: remove unlikely candidates, unpack divs etc.
     fn on_capturing(&mut self, node: &NodeRef) {
-        for child in node.children().elements() {
-            if is_unlikely_candidate(&child) {
+        for child in node.children() {
+            let remove = match *child.data() {
+                NodeData::Comment(_) |
+                NodeData::DocumentFragment => true,
+                NodeData::Element(ref elem) => {
+                    match elem.name {
+                        tag!("script") |
+                        tag!("style") |
+                        tag!("noscript") => true,
+                        _ => false
+                    }
+                },
+                _ => false
+            };
+
+            if remove {
                 child.remove();
-            } else if child.is(tag!("div")) {
-                transform_div(&child);
+            }
+
+            if let Some(child) = child.into_element_ref() {
+                if is_unlikely_candidate(&child) {
+                    child.remove();
+                } else if child.is(tag!("div")) {
+                    transform_div(&child);
+                }
             }
         }
     }
