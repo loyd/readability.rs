@@ -240,8 +240,11 @@ fn class_score(elem: &ElemRef) -> f32 {
 
 fn is_stuffed(elem: &ElemRef, info: &NodeInfo) -> bool {
     match elem.name {
+        //#TODO: remove <object>, <embed>, <footer> etc.
+        tag!("h1") => false,
+
         tag!("div") | tag!("section") | tag!("header") |
-        tag!("h1") | tag!("h2") | tag!("h3") | tag!("h4") | tag!("h5") | tag!("h6") => {
+        tag!("h2") | tag!("h3") | tag!("h4") | tag!("h5") | tag!("h6") => {
             if info.text_len == 0 {
                 let children_count = elem.as_node().children().count() as u32;
 

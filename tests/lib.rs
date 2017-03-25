@@ -114,6 +114,7 @@ macro_rules! test_sample {
     };
 }
 
+test_sample!(base_url);
 test_sample!(herald);
 test_sample!(medium_1);
 test_sample!(medium_2);
