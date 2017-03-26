@@ -363,7 +363,12 @@ impl Readability {
 
     pub fn parse(&mut self, html: &str) -> NodeRef {
         let top_level = kuchiki::parse_html().one(html);
-        self.readify(top_level)
+
+        let node = top_level.select("body").ok()
+            .and_then(|mut it| it.next())
+            .map_or(top_level, |body| body.as_node().clone());
+
+        self.readify(node)
     }
 
     fn readify(&mut self, top_level: NodeRef) -> NodeRef {
