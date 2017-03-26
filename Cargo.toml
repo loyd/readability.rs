@@ -1,7 +1,15 @@
 [package]
 name = "readability"
 version = "0.1.0"
+description = "Really fast readability."
+keywords = ["dom", "html", "text", "extraction"]
 authors = ["Paul Loyd <pavelko95@gmail.com>"]
+repository = "https://github.com/loyd/readability.rs"
+license = "MIT"
+readme = "README.md"
+
+[badges]
+travis-ci = { repository = "loyd/readability.rs" }
 
 [dependencies]
 kuchiki = "^0.4.1"
