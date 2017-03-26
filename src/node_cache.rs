@@ -21,20 +21,12 @@ impl<T: Default> NodeCache<T> {
         NodeCache(HashMap::new())
     }
 
-    pub fn get(&mut self, node: &NodeRef) -> &mut T {
-        let key = HashableNodeRef(node.clone());
-        self.0.entry(key).or_insert_with(Default::default)
+    pub fn get(&mut self, node: &NodeRef) -> Option<&mut T> {
+        self.0.get_mut(&HashableNodeRef(node.clone()))
     }
 
-    pub fn get_has(&mut self, node: &NodeRef) -> (&mut T, bool) {
+    pub fn get_or_create(&mut self, node: &NodeRef) -> &mut T {
         let key = HashableNodeRef(node.clone());
-        let mut stored = true;
-
-        let entry = self.0.entry(key).or_insert_with(|| {
-            stored = false;
-            Default::default()
-        });
-
-        (entry, stored)
+        self.0.entry(key).or_insert_with(Default::default)
     }
 }

@@ -298,6 +298,7 @@ struct NodeInfo {
     text_len: u32,
     link_len: u32,
     commas: u32,
+    is_candidate: bool,
 
     p_count: u32,
     img_count: u32,
@@ -448,7 +449,7 @@ impl Readability {
 
                 let parent = node.parent().unwrap();
 
-                let parent_info = self.info.get(&parent);
+                let parent_info = self.info.get_or_create(&parent);
                 parent_info.text_len += char_cnt;
                 parent_info.commas += comma_cnt;
             },
@@ -461,11 +462,15 @@ impl Readability {
 
                 let elem = node.clone().into_element_ref().unwrap();
 
-                let acceptable = is_stuffed(&elem, self.info.get(&node)) &&
+                let acceptable = is_stuffed(&elem, self.info.get_or_create(&node)) &&
                     (!self.clean_conditionally || self.is_conditionally_acceptable(&elem));
 
                 //#XXX: maybe it should be before the score propagation?
                 if !acceptable {
+                    if let Some(info) = self.info.get(&node) {
+                        info.is_candidate = false;
+                    }
+
                     node.remove();
                     return;
                 }
@@ -494,9 +499,9 @@ impl Readability {
 
         let is_a = node.is(tag!("a"));
         //#TODO: avoid extra cloning.
-        let info = self.info.get(node).clone();
+        let info = self.info.get_or_create(node).clone();
 
-        let parent_info = self.info.get(&parent);
+        let parent_info = self.info.get_or_create(&parent);
 
         if let Some(elem) = node.as_element() {
             match elem.name {
@@ -546,7 +551,7 @@ impl Readability {
             return false;
         }
 
-        let info = self.info.get(elem.as_node());
+        let info = self.info.get_or_create(elem.as_node());
 
         if info.commas >= 10 {
             return true;
@@ -580,7 +585,7 @@ impl Readability {
             return None;
         }
 
-        let info = self.info.get(&node);
+        let info = self.info.get_or_create(&node);
 
         if info.text_len < 25 {
             return None;
@@ -613,12 +618,13 @@ impl Readability {
 
             let addition = content_score / div;
 
-            let (info, stored) = self.info.get_has(ancestor.as_node());
+            let info = self.info.get_or_create(ancestor.as_node());
 
             info.content_score += addition;
 
-            if stored {
+            if !info.is_candidate {
                 self.candidates.push(ancestor);
+                info.is_candidate = true;
             }
         }
     }
@@ -628,7 +634,12 @@ impl Readability {
         let mut best_score = -f32::INFINITY;
 
         for candidate in self.candidates.drain(..) {
-            let info = self.info.get(candidate.as_node());
+            let info = self.info.get(candidate.as_node()).unwrap();
+
+            // The node has been removed.
+            if !info.is_candidate {
+                continue;
+            }
 
             debug_assert!(info.text_len > 0);
             debug_assert!(info.text_len >= info.link_len);
@@ -661,11 +672,11 @@ impl Readability {
         // Because of the bonus system, parents of candidates might have scores themselves.
         // if we see the score going *up* in the first few steps up the tree, that's a decent sign
         // that there might be more content lurking in other places that we want to unify in.
-        let mut last_score = self.info.get(&candidate).content_score;
+        let mut last_score = self.info.get_or_create(&candidate).content_score;
         let score_threshold = last_score / 3.;
 
         for parent in candidate.ancestors().take_while(|n| !n.is(tag!("body"))) {
-            let parent_score = self.info.get(&parent).content_score;
+            let parent_score = self.info.get_or_create(&parent).content_score;
 
             if parent_score < score_threshold {
                 break;
