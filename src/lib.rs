@@ -496,6 +496,8 @@ impl Readability {
                     child.remove();
                 } else if child.is(tag!("div")) {
                     transform_div(&child);
+                } else if child.is(tag!("font")) {
+                    child.rename(tag!("span"));
                 }
             }
         }

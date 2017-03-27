@@ -135,6 +135,7 @@ macro_rules! test_sample {
 
 test_sample!(base_url);
 test_sample!(social_buttons);
+test_sample!(replace_font_tags);
 
 test_sample!(bbc);
 test_sample!(buzzfeed);
