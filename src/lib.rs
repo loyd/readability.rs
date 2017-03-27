@@ -306,6 +306,7 @@ struct NodeInfo {
     link_len: u32,
     commas: u32,
     is_candidate: bool,
+    is_shabby: bool,
 
     p_count: u32,
     img_count: u32,
@@ -326,6 +327,7 @@ impl fmt::Debug for NodeInfo {
         if self.link_len > 0 { s.field("link", &self.link_len); }
         if self.commas > 0 { s.field("commas", &self.commas); }
         if self.is_candidate { s.field("candidate", &self.is_candidate); }
+        if self.is_shabby { s.field("shabby", &self.is_shabby); }
         if self.p_count > 0 { s.field("p", &self.p_count); }
         if self.img_count > 0 { s.field("img", &self.img_count); }
         if self.li_count > 0 { s.field("li", &self.li_count); }
@@ -510,22 +512,30 @@ impl Readability {
 
                 if is_tag_to_score(name) {
                     self.score_node(&node);
-                    trace!("    => content score: {}", self.info.get(&node).unwrap().content_score);
                 }
 
                 let elem = node.clone().into_element_ref().unwrap();
 
-                let acceptable = is_stuffed(&elem, self.info.get_or_create(&node)) &&
-                    (!self.clean_conditionally || self.is_conditionally_acceptable(&elem));
+                //#TODO: don't create info if it's not necessary.
+                if !is_stuffed(&elem, self.info.get_or_create(&node)) {
+                    node.remove();
+                    trace!("    => removed (it's not stuffed)");
 
-                //#XXX: maybe it should be before the score propagation?
-                if !acceptable {
+                    return;
+                }
+
+                if self.clean_conditionally && !self.is_conditionally_acceptable(&elem) {
                     if let Some(info) = self.info.get(&node) {
                         info.is_candidate = false;
                     }
 
-                    trace!("    => removed");
+                    if let Some(info) = node.parent().map(|parent| self.info.get_or_create(&parent)) {
+                        info.is_shabby = true;
+                    }
+
                     node.remove();
+                    trace!("    => removed (it's conditionally unacceptable)");
+
                     return;
                 }
 
@@ -762,7 +772,9 @@ impl Readability {
         // joining logic when adjacent content is actually located in parent's sibling node.
         let parent_it = candidate.ancestors().take_while(|parent| {
             let mut child_it = parent.children();
-            !parent.is(tag!("body")) && child_it.next().is_some() && child_it.next().is_none()
+
+            !parent.is(tag!("body")) && child_it.next().is_some() && child_it.next().is_none() &&
+                self.info.get(&parent).map_or(true, |info| !info.is_shabby)
         });
 
         parent_it.last().map_or(candidate, |parent| {

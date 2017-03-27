@@ -33,6 +33,7 @@ macro_rules! bench_sample {
 
 bench_sample!(base_url);
 bench_sample!(herald);
+bench_sample!(libertation);
 bench_sample!(medium_1);
 bench_sample!(medium_2);
 bench_sample!(msn);
