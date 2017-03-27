@@ -134,6 +134,7 @@ macro_rules! test_sample {
 }
 
 test_sample!(base_url);
+test_sample!(bbc);
 test_sample!(herald);
 test_sample!(libertation);
 test_sample!(medium_1);
