@@ -137,6 +137,7 @@ test_sample!(base_url);
 test_sample!(social_buttons);
 
 test_sample!(bbc);
+test_sample!(buzzfeed);
 test_sample!(cnet);
 test_sample!(heise);
 test_sample!(herald);

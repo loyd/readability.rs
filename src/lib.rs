@@ -57,6 +57,10 @@ trait NodeRefExt {
             node.replace(&replacement);
         }
     }
+
+    fn previous_element(&self) -> Option<ElemRef> {
+        self.node_ref().preceding_siblings().elements().next()
+    }
 }
 
 impl NodeRefExt for NodeRef {
@@ -70,6 +74,10 @@ impl NodeRefExt for ElemRef {
     #[inline]
     fn node_ref(&self) -> &NodeRef {
         self.as_node()
+    }
+
+    fn is(&self, name: QualName) -> bool {
+        self.name == name
     }
 }
 
@@ -537,6 +545,15 @@ impl Readability {
                     trace!("    => removed (it's conditionally unacceptable)");
 
                     return;
+                }
+
+                // Remove <br> preceding <p>.
+                if node.is(tag!("p")) {
+                    if let Some(elem) = node.previous_element() {
+                        if elem.is(tag!("br")) {
+                            elem.remove();
+                        }
+                    }
                 }
 
                 let mut attributes = attributes.borrow_mut();
