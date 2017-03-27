@@ -140,4 +140,5 @@ test_sample!(libertation);
 test_sample!(medium_1);
 test_sample!(medium_2);
 test_sample!(msn);
+test_sample!(wikia);
 test_sample!(wikipedia);
