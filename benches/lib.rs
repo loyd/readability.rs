@@ -32,6 +32,7 @@ macro_rules! bench_sample {
 }
 
 bench_sample!(bbc);
+bench_sample!(cnet);
 bench_sample!(herald);
 bench_sample!(libertation);
 bench_sample!(medium_1);
