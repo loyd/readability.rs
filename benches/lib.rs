@@ -36,6 +36,7 @@ bench_sample!(buzzfeed);
 bench_sample!(cnet);
 bench_sample!(heise);
 bench_sample!(herald);
+bench_sample!(iab);
 bench_sample!(libertation);
 bench_sample!(medium_1);
 bench_sample!(medium_2);

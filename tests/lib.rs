@@ -141,6 +141,7 @@ test_sample!(buzzfeed);
 test_sample!(cnet);
 test_sample!(heise);
 test_sample!(herald);
+test_sample!(iab);
 test_sample!(libertation);
 test_sample!(medium_1);
 test_sample!(medium_2);
