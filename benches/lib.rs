@@ -37,5 +37,6 @@ bench_sample!(libertation);
 bench_sample!(medium_1);
 bench_sample!(medium_2);
 bench_sample!(msn);
+bench_sample!(nytimes_1);
 bench_sample!(wikia);
 bench_sample!(wikipedia);
