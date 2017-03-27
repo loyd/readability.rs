@@ -138,6 +138,7 @@ test_sample!(social_buttons);
 
 test_sample!(bbc);
 test_sample!(cnet);
+test_sample!(heise);
 test_sample!(herald);
 test_sample!(libertation);
 test_sample!(medium_1);
