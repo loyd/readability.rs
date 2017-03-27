@@ -669,7 +669,9 @@ impl Readability {
     }
 
     fn propagate_score(&mut self, node: &NodeRef, content_score: f32) {
+        //#TODO: mozilla/readability traverse only four first ancestors.
         for (level, ancestor) in node.ancestors().elements().enumerate() {
+            //#TODO: mozilla/readability doesn't filter like we.
             if is_tag_to_score(&ancestor.name) {
                 return;
             }
