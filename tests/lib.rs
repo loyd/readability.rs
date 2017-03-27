@@ -1,7 +1,12 @@
+extern crate env_logger;
+extern crate log;
 extern crate kuchiki;
 extern crate readability;
 extern crate url;
 
+use std::env;
+
+use env_logger::LogBuilder;
 use kuchiki::NodeRef;
 use kuchiki::NodeData::*;
 use kuchiki::traits::TendrilSink;
@@ -89,6 +94,18 @@ fn stringify_node(node: &NodeRef) -> String {
     }
 }
 
+fn setup_logger() {
+    let env = match env::var("RUST_LOG") {
+        Ok(env) => env,
+        Err(_) => return
+    };
+
+    let _ = LogBuilder::new()
+        .format(|record| format!("{}", record.args()))
+        .parse(&env)
+        .init();
+}
+
 macro_rules! include_sample_file {
     ($name:ident, $file:expr) => {
         include_str!(concat!("../samples/", stringify!($name), "/", $file));
@@ -101,6 +118,8 @@ macro_rules! test_sample {
         fn $name() {
             static SOURCE: &'static str = include_sample_file!($name, "source.html");
             static EXPECTED: &'static str = include_sample_file!($name, "expected.html");
+
+            setup_logger();
 
             let actual = Readability::new()
                 .base_url(Url::parse("http://fakehost/test/page.html").unwrap())

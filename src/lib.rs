@@ -1,4 +1,6 @@
 #[macro_use]
+extern crate log;
+#[macro_use]
 extern crate html5ever_atoms;
 #[macro_use]
 extern crate lazy_static;
@@ -9,6 +11,7 @@ extern crate url;
 use std::cmp;
 use std::iter;
 use std::f32;
+use std::fmt;
 
 use regex::Regex;
 use html5ever_atoms::QualName;
@@ -128,13 +131,17 @@ fn transform_div(div: &ElemRef) {
     let node = div.as_node();
 
     if has_single_p(node) {
+        trace!("    => replacing <{}> with <p>", format_tag(node));
         let p = node.children().elements().next().unwrap();
         node.replace(&p);
     } else if !has_block_elem(node) {
+        trace!("    => renaming <{}> to <p>", format_tag(node));
         node.rename(tag!("p"));
     } else {
+        //#TODO: move to upper level.
         for child in node.children() {
             if let Some(text) = child.as_text() {
+                trace!("    => replacing text node in <{}> with <p>", format_tag(node));
                 let text = text.borrow();
 
                 if text.trim().is_empty() {
@@ -310,6 +317,28 @@ struct NodeInfo {
     hr_count: u32,
 }
 
+impl fmt::Debug for NodeInfo {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let mut s = fmt.debug_struct("");
+
+        if self.content_score > 0. { s.field("content_score", &self.content_score); }
+        if self.text_len > 0 { s.field("text", &self.text_len); }
+        if self.link_len > 0 { s.field("link", &self.link_len); }
+        if self.commas > 0 { s.field("commas", &self.commas); }
+        if self.is_candidate { s.field("candidate", &self.is_candidate); }
+        if self.p_count > 0 { s.field("p", &self.p_count); }
+        if self.img_count > 0 { s.field("img", &self.img_count); }
+        if self.li_count > 0 { s.field("li", &self.li_count); }
+        if self.input_count > 0 { s.field("input", &self.input_count); }
+        if self.embed_count > 0 { s.field("embed", &self.embed_count); }
+        if self.iframe_count > 0 { s.field("iframe", &self.iframe_count); }
+        if self.br_count > 0 { s.field("br", &self.br_count); }
+        if self.hr_count > 0 { s.field("hr", &self.hr_count); }
+
+        s.finish()
+    }
+}
+
 pub struct Readability {
     info: NodeCache<NodeInfo>,
     candidates: Vec<ElemRef>,
@@ -380,6 +409,7 @@ impl Readability {
             }
         }
 
+        // Need to detach `top_level`.
         self.readify(top_level)
     }
 
@@ -422,6 +452,10 @@ impl Readability {
 
     // Capturing stage: remove unlikely candidates, unpack divs etc.
     fn on_capturing(&mut self, node: &NodeRef) {
+        if node.as_element().is_some() {
+            trace!("<{}>", format_tag(node));
+        }
+
         for child in node.children() {
             let remove = match *child.data() {
                 NodeData::Comment(_) |
@@ -439,11 +473,16 @@ impl Readability {
             };
 
             if remove {
+                if child.as_element().is_some() {
+                    trace!("    => removing <{}> as useless element", format_tag(&child));
+                }
+
                 child.remove();
             }
 
             if let Some(child) = child.into_element_ref() {
                 if self.strip_unlikelys && is_unlikely_candidate(&child) {
+                    trace!("    => removing <{}> as unlikely candidate", format_tag(&child));
                     child.remove();
                 } else if child.is(tag!("div")) {
                     transform_div(&child);
@@ -465,10 +504,13 @@ impl Readability {
                 parent_info.commas += comma_cnt;
             },
             NodeData::Element(ElementData { ref name, ref attributes, .. }) => {
+                trace!("</{}> {}", format_tag(node), format_info(self.info.get(&node)));
+
                 self.propagate_info(node);
 
                 if is_tag_to_score(name) {
                     self.score_node(&node);
+                    trace!("    => content score: {}", self.info.get(&node).unwrap().content_score);
                 }
 
                 let elem = node.clone().into_element_ref().unwrap();
@@ -482,6 +524,7 @@ impl Readability {
                         info.is_candidate = false;
                     }
 
+                    trace!("    => removed");
                     node.remove();
                     return;
                 }
@@ -644,11 +687,17 @@ impl Readability {
         let mut best = None;
         let mut best_score = -f32::INFINITY;
 
+        trace!("Search for the best candidate...");
+
         for candidate in self.candidates.drain(..) {
+            trace!("Candidate: <{}> {}",
+                   format_tag(&candidate), format_info(self.info.get(candidate.as_node())));
+
             let info = self.info.get(candidate.as_node()).unwrap();
 
             // The node has been removed.
             if !info.is_candidate {
+                trace!("    => the node has been removed!");
                 continue;
             }
 
@@ -670,16 +719,24 @@ impl Readability {
             // small link density (5% or less) and be mostly unaffected by this operation.
             score *= 1. - info.link_len as f32 / info.text_len as f32;
 
+            trace!("    => score: {}", score);
+
             if score > best_score {
                 best = Some(candidate);
                 best_score = score;
             }
         }
 
+        if let Some(ref best) = best {
+            trace!("The best candidate: <{}> with {} points", format_tag(best), best_score);
+        }
+
         best
     }
 
     fn correct_candidate(&mut self, mut candidate: NodeRef) -> NodeRef {
+        trace!("Correcting candidate...");
+
         // Because of the bonus system, parents of candidates might have scores themselves.
         // if we see the score going *up* in the first few steps up the tree, that's a decent sign
         // that there might be more content lurking in other places that we want to unify in.
@@ -695,6 +752,7 @@ impl Readability {
 
             if parent_score > last_score {
                 candidate = parent;
+                trace!("New candidate: <{}> (enough score)", format_tag(&candidate));
             }
 
             last_score = parent_score;
@@ -707,6 +765,26 @@ impl Readability {
             !parent.is(tag!("body")) && child_it.next().is_some() && child_it.next().is_none()
         });
 
-        parent_it.last().unwrap_or(candidate)
+        parent_it.last().map_or(candidate, |parent| {
+            trace!("New candidate: <{}> (single child)", format_tag(&parent));
+            parent
+        })
     }
+}
+
+fn format_tag<N: NodeRefExt>(node: &N) -> String {
+    let elem = node.node_ref().as_element().unwrap();
+    let tag = &elem.name.local;
+    let attributes = elem.attributes.borrow();
+
+    match (attributes.get("id"), attributes.get("class")) {
+        (Some(id), Some(class)) => format!("{} id=\"{}\" class=\"{}\"", tag, id, class),
+        (Some(id), None) => format!("{} id=\"{}\"", tag, id),
+        (None, Some(class)) => format!("{} class=\"{}\"", tag, class),
+        (None, None) => format!("{}", tag)
+    }
+}
+
+fn format_info(info: Option<&mut NodeInfo>) -> String {
+    info.map_or_else(String::new, |i| format!("{:?}", i))
 }
