@@ -44,3 +44,4 @@ bench_sample!(msn);
 bench_sample!(nytimes_1);
 bench_sample!(wikia);
 bench_sample!(wikipedia);
+bench_sample!(wordpress);
