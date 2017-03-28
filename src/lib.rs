@@ -419,7 +419,7 @@ impl Readability {
             }
         }
 
-        // Need to detach `top_level`.
+        //#TODO: Need to detach `top_level`.
         self.readify(top_level)
     }
 
@@ -688,13 +688,7 @@ impl Readability {
     }
 
     fn propagate_score(&mut self, node: &NodeRef, content_score: f32) {
-        //#TODO: mozilla/readability traverse only four first ancestors.
-        for (level, ancestor) in node.ancestors().elements().enumerate() {
-            //#TODO: mozilla/readability doesn't filter like we.
-            if is_tag_to_score(&ancestor.name) {
-                return;
-            }
-
+        for (level, ancestor) in node.ancestors().elements().enumerate().take(3) {
             let div = match level {
                 0 => 1.,
                 1 => 2.,
