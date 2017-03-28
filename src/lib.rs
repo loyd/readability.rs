@@ -319,7 +319,7 @@ fn clean_attributes(attributes: &mut Attributes) {
 fn fix_relative_urls(attributes: &mut Attributes, base_url: &Url) {
     fn fix(url: &mut String, base: &Url) {
         // Ignore absolute and hash urls.
-        if PROTOCOL.is_match(url) || url.starts_with('#') {
+        if url.is_empty() || PROTOCOL.is_match(url) || url.starts_with('#') {
             return;
         }
 
