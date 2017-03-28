@@ -102,6 +102,10 @@ lazy_static! {
         sponsor|shopping|tags|tool|widget
     ").unwrap();
 
+    static ref BYLINE: Regex = Regex::new(r"(?xi)
+        byline|author|dateline|writtenby|p-author
+    ").unwrap();
+
     static ref VIDEO: Regex = Regex::new(r"(?xi)
         //(www\.)?(dailymotion|youtube|youtube-nocookie|player\.vimeo)\.com
     ").unwrap();
@@ -115,6 +119,32 @@ macro_rules! tag {
 
 macro_rules! attrib {
     ($name:tt) => { local_name!($name) };
+}
+
+fn extract_byline(elem: &ElemRef) -> Option<String> {
+    let attributes = elem.attributes.borrow();
+
+    let rel = attributes.get(attrib!("rel")).unwrap_or("");
+    let classes = attributes.get(attrib!("class")).unwrap_or("");
+    let id = attributes.get(attrib!("id")).unwrap_or("");
+
+    //#TODO: uncomment it after traverse repearing.
+    //let is_byline = rel == "author" || BYLINE.is_match(classes) || BYLINE.is_match(id);
+    let is_byline = rel == "author";
+
+    if is_byline {
+        //#TODO: traverse subtrees manually to preserve spaces?
+        let text = elem.text_contents();
+        let byline = text.trim();
+
+        if 0 < byline.len() && byline.len() < 100 {
+            Some(byline.to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    }
 }
 
 fn is_unlikely_candidate(elem: &ElemRef) -> bool {
@@ -352,6 +382,7 @@ impl fmt::Debug for NodeInfo {
 pub struct Readability {
     info: NodeCache<NodeInfo>,
     candidates: Vec<ElemRef>,
+    byline: Option<String>,
 
     strip_unlikelys: bool,
     weight_classes: bool,
@@ -365,6 +396,7 @@ impl Readability {
         Readability {
             info: NodeCache::new(),
             candidates: Vec::new(),
+            byline: None,
 
             strip_unlikelys: true,
             weight_classes: true,
@@ -480,6 +512,17 @@ impl Readability {
             }
 
             if let Some(child) = child.into_element_ref() {
+                //#TODO: mozilla/readability takes into account only first occurrence.
+                //if self.byline.is_none() {
+                    if let Some(byline) = extract_byline(&child) {
+                        self.byline = Some(byline);
+                        trace!("    => removing <{}> as byline container", format_tag(&child));
+                        child.remove();
+
+                        continue;
+                    }
+                //}
+
                 if self.strip_unlikelys && is_unlikely_candidate(&child) {
                     trace!("    => removing <{}> as unlikely candidate", format_tag(&child));
                     child.remove();
