@@ -402,24 +402,13 @@ impl Readability {
     }
 
     pub fn parse(&mut self, html: &str) -> NodeRef {
-        let mut top_level = kuchiki::parse_html().one(html);
+        let top_level = kuchiki::parse_html().one(html);
 
-        //#XXX: refactor this shit!
-        if top_level.as_document().is_some() && top_level.first_child().is_some() {
-            top_level = top_level.first_child().unwrap();
+        let top_level = top_level.select("html > body").unwrap().next()
+            .map_or(top_level, |b| b.as_node().clone());
 
-            if top_level.as_doctype().is_some() && top_level.next_sibling().is_some() {
-                top_level = top_level.next_sibling().unwrap();
-            }
+        top_level.detach();
 
-            if top_level.is(tag!("html")) {
-                if let Some(body) = top_level.children().find(|child| child.is(tag!("body"))) {
-                    top_level = body;
-                }
-            }
-        }
-
-        //#TODO: Need to detach `top_level`.
         self.readify(top_level)
     }
 
