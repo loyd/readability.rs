@@ -147,6 +147,7 @@ test_sample!(iab);
 test_sample!(libertation);
 test_sample!(medium_1);
 test_sample!(medium_2);
+test_sample!(mozilla_1);
 test_sample!(msn);
 test_sample!(nytimes_1);
 test_sample!(wikia);

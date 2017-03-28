@@ -41,6 +41,7 @@ bench_sample!(iab);
 bench_sample!(libertation);
 bench_sample!(medium_1);
 bench_sample!(medium_2);
+bench_sample!(mozilla_1);
 bench_sample!(msn);
 bench_sample!(nytimes_1);
 bench_sample!(wikia);

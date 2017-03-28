@@ -43,7 +43,7 @@ trait NodeRefExt {
         self.node_ref().detach();
     }
 
-    fn rename(&self, name: QualName) {
+    fn rename(&self, name: QualName) -> NodeRef {
         let node = self.node_ref();
 
         if let Some(elem) = node.as_element() {
@@ -55,6 +55,10 @@ trait NodeRefExt {
             }
 
             node.replace(&replacement);
+
+            replacement
+        } else {
+            node.clone()
         }
     }
 
@@ -169,17 +173,17 @@ fn transform_div(div: &ElemRef) {
     let node = div.as_node();
 
     if has_single_p(node) {
-        trace!("    => replacing <{}> with <p>", format_tag(node));
+        trace!("    => replacing <{}> with inner <p>", format_tag(node));
         let p = node.children().elements().next().unwrap();
         node.replace(&p);
     } else if !has_block_elem(node) {
-        trace!("    => renaming <{}> to <p>", format_tag(node));
+        trace!("    => altering <{}> to <p>", format_tag(node));
         node.rename(tag!("p"));
     } else {
         //#TODO: move to upper level.
         for child in node.children() {
             if let Some(text) = child.as_text() {
-                trace!("    => replacing text node in <{}> with <p>", format_tag(node));
+                trace!("    => moving text node in <{}> with <p>", format_tag(node));
                 let text = text.borrow();
 
                 if text.trim().is_empty() {
@@ -286,7 +290,7 @@ fn class_score(elem: &ElemRef) -> f32 {
 fn is_stuffed(elem: &ElemRef, info: &NodeInfo) -> bool {
     match elem.name {
         //#TODO: remove <object>, <embed> etc.
-        tag!("h1") | tag!("footer") => false,
+        tag!("h1") | tag!("footer") | tag!("button") => false,
 
         tag!("div") | tag!("section") | tag!("header") |
         tag!("h2") | tag!("h3") | tag!("h4") | tag!("h5") | tag!("h6") => {
@@ -301,11 +305,15 @@ fn is_stuffed(elem: &ElemRef, info: &NodeInfo) -> bool {
             true
         },
 
-        tag!("blockquote") | tag!("li") | tag!("p") | tag!("pre") |
-        tag!("thead") | tag!("tbody") | tag!("th") | tag!("tr") | tag!("td") => {
-                //#TODO: add <video> and <audio> counters to the sum.
-                info.text_len > 0 || info.img_count + info.embed_count + info.iframe_count > 0
-            },
+        tag!("thead") | tag!("tbody") | tag!("th") | tag!("tr") | tag!("td") =>
+            //#TODO: add <video> and <audio> counters to the sum.
+            info.text_len > 0 || info.img_count + info.embed_count + info.iframe_count > 0,
+
+        tag!("p") | tag!("pre") | tag!("blockquote") =>
+            //#TODO: add <video> and <audio> counters to the sum.
+            info.img_count + info.embed_count + info.iframe_count > 0 ||
+            //#TODO: calculate length without construction the string.
+                !elem.text_contents().trim().is_empty(),
 
         _ => true
     }
@@ -334,6 +342,13 @@ fn fix_relative_urls(attributes: &mut Attributes, base_url: &Url) {
 
     if let Some(attr) = attributes.get_mut(attrib!("src")) {
         fix(attr, base_url);
+    }
+}
+
+fn is_acceptable_top_level(tag: &QualName) -> bool {
+    match *tag {
+        tag!("div") | tag!("article") | tag!("section") | tag!("p") => true,
+        _ => false
     }
 }
 
@@ -534,6 +549,7 @@ impl Readability {
                 } else if child.is(tag!("div")) {
                     transform_div(&child);
                 } else if child.is(tag!("font")) {
+                    trace!("    => altering <{}> to <div>", format_tag(&child));
                     child.rename(tag!("span"));
                 }
             }
@@ -864,10 +880,17 @@ impl Readability {
                 self.info.get(&parent).map_or(true, |info| !info.is_shabby)
         });
 
-        parent_it.last().map_or(candidate, |parent| {
+        let result = parent_it.last().map_or(candidate, |parent| {
             trace!("New candidate: <{}> (single child)", format_tag(&parent));
             parent
-        })
+        });
+
+        if !is_acceptable_top_level(&result.as_element().unwrap().name) {
+            trace!("Altering result: <{}> to <div>", format_tag(&result));
+            result.rename(tag!("div"))
+        } else {
+            result
+        }
     }
 }
 
