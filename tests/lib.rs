@@ -140,6 +140,7 @@ test_sample!(replace_font_tags);
 test_sample!(bbc);
 test_sample!(buzzfeed);
 test_sample!(cnet);
+test_sample!(ehow_2);
 test_sample!(heise);
 test_sample!(herald_sun);
 test_sample!(iab);

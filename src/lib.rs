@@ -477,8 +477,13 @@ impl Readability {
             current = ncurrent;
         }
 
-        //#TODO: add something more clever: search good parents and siblings.
-        self.select_best().map_or(top_level, |b| self.correct_candidate(b.as_node().clone()))
+        if self.candidates.is_empty() {
+            return top_level;
+        }
+
+        self.score_candidates();
+        let top_candidate = self.find_common_candidate();
+        self.correct_candidate(top_candidate)
     }
 
     // Capturing stage: remove unlikely candidates, unpack divs etc.
@@ -740,11 +745,10 @@ impl Readability {
         }
     }
 
-    fn select_best(&mut self) -> Option<ElemRef> {
-        let mut best = None;
-        let mut best_score = -f32::INFINITY;
+    fn score_candidates(&mut self) {
+        trace!("Found {} candidates. Scoring...", self.candidates.len());
 
-        trace!("Search for the best candidate...");
+        let mut scored_candidates = Vec::with_capacity(self.candidates.len());
 
         for candidate in self.candidates.drain(..) {
             trace!("Candidate: <{}> {}",
@@ -778,17 +782,53 @@ impl Readability {
 
             trace!("    => score: {}", score);
 
-            if score > best_score {
-                best = Some(candidate);
-                best_score = score;
+            debug_assert!(score.is_finite());
+
+            scored_candidates.push((score, candidate));
+        }
+
+        scored_candidates.sort_by(|&(a, _), &(b, _)| b.partial_cmp(&a).unwrap());
+
+        let score_threshold = scored_candidates[0].0 * 0.75;
+
+        let top_candidate_it = scored_candidates.into_iter()
+            .take_while(|&(score, _)| score >= score_threshold)
+            .map(|(_, candidate)| candidate);
+
+        self.candidates.extend(top_candidate_it);
+
+        trace!("After scoring left {} candidates", self.candidates.len());
+    }
+
+    fn find_common_candidate(&self) -> NodeRef {
+        //#TODO: mozilla/readability uses 3 here, but we still have problems.
+        const MIN_CANDIDATES: usize = 4;
+
+        trace!("Searching for common parent...");
+
+        let best = self.candidates[0].as_node();
+
+        if self.candidates.len() < MIN_CANDIDATES ||
+           best.is(tag!("body")) || best.parent().map_or(true, |p| p.is(tag!("body"))) {
+            return best.clone();
+        }
+
+        for common in best.ancestors().take_while(|n| !n.is(tag!("body"))) {
+            let mut n = 0;
+
+            for candidate in &self.candidates[1..] {
+                if candidate.as_node().ancestors().find(|a| a == &common).is_some() {
+                    n += 1;
+                }
+
+                if n == MIN_CANDIDATES {
+                    trace!("Found common parent of top candidates: <{}>", format_tag(&common));
+                    return common;
+                }
             }
         }
 
-        if let Some(ref best) = best {
-            trace!("The best candidate: <{}> with {} points", format_tag(best), best_score);
-        }
-
-        best
+        return best.clone();
     }
 
     fn correct_candidate(&mut self, mut candidate: NodeRef) -> NodeRef {

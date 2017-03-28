@@ -34,6 +34,7 @@ macro_rules! bench_sample {
 bench_sample!(bbc);
 bench_sample!(buzzfeed);
 bench_sample!(cnet);
+bench_sample!(ehow_2);
 bench_sample!(heise);
 bench_sample!(herald_sun);
 bench_sample!(iab);
