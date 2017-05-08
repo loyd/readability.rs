@@ -497,6 +497,11 @@ impl Readability {
         }
 
         self.score_candidates();
+
+        if self.candidates.is_empty() {
+            return top_level;
+        }
+
         let top_candidate = self.find_common_candidate();
         self.correct_candidate(top_candidate)
     }
@@ -801,6 +806,11 @@ impl Readability {
             debug_assert!(score.is_finite());
 
             scored_candidates.push((score, candidate));
+        }
+
+        if scored_candidates.is_empty() {
+            trace!("There are no actual candidates!");
+            return;
         }
 
         scored_candidates.sort_by(|&(a, _), &(b, _)| b.partial_cmp(&a).unwrap());
