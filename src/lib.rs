@@ -24,6 +24,8 @@ use node_cache::NodeCache;
 
 mod node_cache;
 
+// TODO: add examples.
+// TODO: document it!
 
 type ElemRef = NodeDataRef<ElementData>;
 
@@ -106,9 +108,10 @@ lazy_static! {
         sponsor|shopping|tags|tool|widget
     ").unwrap();
 
-    static ref BYLINE: Regex = Regex::new(r"(?xi)
-        byline|author|dateline|writtenby|p-author
-    ").unwrap();
+    // TODO: restore byline parsing.
+    //static ref BYLINE: Regex = Regex::new(r"(?xi)
+        //byline|author|dateline|writtenby|p-author
+    //").unwrap();
 
     static ref VIDEO: Regex = Regex::new(r"(?xi)
         //(www\.)?(dailymotion|youtube|youtube-nocookie|player\.vimeo)\.com
@@ -129,15 +132,15 @@ fn extract_byline(elem: &ElemRef) -> Option<String> {
     let attributes = elem.attributes.borrow();
 
     let rel = attributes.get(attrib!("rel")).unwrap_or("");
-    let classes = attributes.get(attrib!("class")).unwrap_or("");
-    let id = attributes.get(attrib!("id")).unwrap_or("");
+    //let classes = attributes.get(attrib!("class")).unwrap_or("");
+    //let id = attributes.get(attrib!("id")).unwrap_or("");
 
-    //#TODO: uncomment it after traverse repearing.
+    // TODO: uncomment it after traverse repearing.
     //let is_byline = rel == "author" || BYLINE.is_match(classes) || BYLINE.is_match(id);
     let is_byline = rel == "author";
 
     if is_byline {
-        //#TODO: traverse subtrees manually to preserve spaces?
+        // TODO: traverse subtrees manually to preserve spaces?
         let text = elem.text_contents();
         let byline = text.trim();
 
@@ -180,7 +183,7 @@ fn transform_div(div: &ElemRef) {
         trace!("    => altering <{}> to <p>", format_tag(node));
         node.rename(tag!("p"));
     } else {
-        //#TODO: move to upper level.
+        // TODO: move to upper level.
         for child in node.children() {
             if let Some(text) = child.as_text() {
                 trace!("    => moving text node in <{}> with <p>", format_tag(node));
@@ -226,7 +229,7 @@ fn count_chars(text: &str) -> (u32, u32) {
     let mut char_cnt = 0;
     let mut comma_cnt = 0;
 
-    //#XXX: what about graphemes?
+    // TODO: what about graphemes?
     let mut iter = text.trim().chars().peekable();
 
     while let Some(ch) = iter.next() {
@@ -289,7 +292,7 @@ fn class_score(elem: &ElemRef) -> f32 {
 
 fn is_stuffed(elem: &ElemRef, info: &NodeInfo) -> bool {
     match elem.name {
-        //#TODO: remove <object>, <embed> etc.
+        // TODO: remove <object>, <embed> etc.
         tag!("h1") | tag!("footer") | tag!("button") => false,
 
         tag!("div") | tag!("section") | tag!("header") |
@@ -306,13 +309,13 @@ fn is_stuffed(elem: &ElemRef, info: &NodeInfo) -> bool {
         },
 
         tag!("thead") | tag!("tbody") | tag!("th") | tag!("tr") | tag!("td") =>
-            //#TODO: add <video> and <audio> counters to the sum.
+            // TODO: add <video> and <audio> counters to the sum.
             info.text_len > 0 || info.img_count + info.embed_count + info.iframe_count > 0,
 
         tag!("p") | tag!("pre") | tag!("blockquote") =>
-            //#TODO: add <video> and <audio> counters to the sum.
+            // TODO: add <video> and <audio> counters to the sum.
             info.img_count + info.embed_count + info.iframe_count > 0 ||
-            //#TODO: calculate length without construction the string.
+            // TODO: calculate length without construction the string.
                 !elem.text_contents().trim().is_empty(),
 
         _ => true
@@ -320,7 +323,7 @@ fn is_stuffed(elem: &ElemRef, info: &NodeInfo) -> bool {
 }
 
 fn clean_attributes(attributes: &mut Attributes) {
-    //#TODO: what about removing all except for `alt`, `href`, `src` and `title`?
+    // TODO: what about removing all except for `alt`, `href`, `src` and `title`?
     attributes.remove(attrib!("style"));
 }
 
@@ -456,6 +459,7 @@ impl Readability {
 
         top_level.detach();
 
+        // TODO: retry with fewer restrictions.
         self.readify(top_level)
     }
 
@@ -463,8 +467,8 @@ impl Readability {
         let mut current = top_level.clone();
         let mut bubbling = false;
 
-        //#TODO: refactor this shitty traverse!
-        //#TODO: ignore or remove empty text nodes.
+        // TODO: refactor this shitty traverse!
+        // TODO: ignore or remove empty text nodes.
         loop {
             if !bubbling {
                 self.on_capturing(&current);
@@ -504,6 +508,8 @@ impl Readability {
 
         let top_candidate = self.find_common_candidate();
         self.correct_candidate(top_candidate)
+
+        // TODO: combine top candidates together.
     }
 
     // Capturing stage: remove unlikely candidates, unpack divs etc.
@@ -537,7 +543,7 @@ impl Readability {
             }
 
             if let Some(child) = child.into_element_ref() {
-                //#TODO: mozilla/readability takes into account only first occurrence.
+                // TODO: mozilla/readability takes into account only first occurrence.
                 //if self.byline.is_none() {
                     if let Some(byline) = extract_byline(&child) {
                         self.byline = Some(byline);
@@ -576,6 +582,7 @@ impl Readability {
             NodeData::Element(ElementData { ref name, ref attributes, .. }) => {
                 trace!("</{}> {}", format_tag(node), format_info(self.info.get(&node)));
 
+                // FIXME: don't propagate info of bad nodes.
                 self.propagate_info(node);
 
                 if is_tag_to_score(name) {
@@ -584,7 +591,7 @@ impl Readability {
 
                 let elem = node.clone().into_element_ref().unwrap();
 
-                //#TODO: don't create info if it's not necessary.
+                // TODO: don't create info if it's not necessary.
                 if !is_stuffed(&elem, self.info.get_or_create(&node)) {
                     node.remove();
                     trace!("    => removed (it's not stuffed)");
@@ -639,7 +646,7 @@ impl Readability {
         };
 
         let is_a = node.is(tag!("a"));
-        //#TODO: avoid extra cloning.
+        // TODO: avoid extra cloning.
         let info = self.info.get_or_create(node).clone();
 
         let parent_info = self.info.get_or_create(&parent);
@@ -685,7 +692,7 @@ impl Readability {
             _ => return true
         };
 
-        //#TODO: cache the score to prevent extra calculations.
+        // TODO: cache the score to prevent extra calculations.
         let class_score = if self.weight_classes { class_score(elem) } else { 0. };
 
         if class_score < 0. {
@@ -701,7 +708,7 @@ impl Readability {
         let link_density = info.link_len as f32 / info.text_len as f32;
         let p_img_ratio = info.p_count as f32 / info.img_count as f32;
 
-        //#TODO: take into account ancestor tags (check "figure").
+        // TODO: take into account ancestor tags (check "figure").
         !(
             (info.img_count > 1 && p_img_ratio < 0.5) ||
             (!is_list && info.li_count > info.p_count + 100) ||
@@ -827,7 +834,7 @@ impl Readability {
     }
 
     fn find_common_candidate(&self) -> NodeRef {
-        //#TODO: mozilla/readability uses 3 here, but we still have problems.
+        // TODO: mozilla/readability uses 3 here, but we still have problems.
         const MIN_CANDIDATES: usize = 4;
 
         trace!("Searching for common parent...");
